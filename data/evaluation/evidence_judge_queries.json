@@ -1,0 +1,188 @@
+[
+  {
+    "id": "e01",
+    "query": "What formal AI training has this person completed?",
+    "evidence": "Microsoft AI Innovators Program (2026) — Azure AI Foundry, local LLMs, AI agents, RAG pipelines.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e02",
+    "query": "What formal AI training has this person completed?",
+    "evidence": "Data Analyst Boostcamp — Istanbul Data Science Academy & Google Cloud (2024) — Data analysis techniques focused on Google Cloud.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e03",
+    "query": "What formal AI training has this person completed?",
+    "evidence": "Huawei Cloud HCCDA–AI (2025) — fine-tuning LLMs and RAG-based search.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e04",
+    "query": "What formal AI training has this person completed?",
+    "evidence": "Turkcell Geleceği Yazan Kadınlar Yapay Zeka Programı (2024) — Machine Learning and Data Science & AI.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e05",
+    "query": "What formal AI training has this person completed?",
+    "evidence": "NTT DATA Data Visualization Program (2024) — data visualization using Power BI.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e06",
+    "query": "What formal AI training has this person completed?",
+    "evidence": "PCAP: Programming Essentials in Python — OpenEDG Python Institute (2020).",
+    "label": "DOES_NOT_SUPPORT"
+  },
+
+  {
+    "id": "e07",
+    "query": "What cloud platforms does this person have experience with?",
+    "evidence": "Cloud & AI: Huawei Cloud, Google Cloud, Azure AI Foundry.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e08",
+    "query": "What cloud platforms does this person have experience with?",
+    "evidence": "Programming: Python, Java, C++.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e09",
+    "query": "What cloud platforms does this person have experience with?",
+    "evidence": "Microsoft AI Engineering Intern — worked with Azure AI Foundry and local LLMs.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e10",
+    "query": "What cloud platforms does this person have experience with?",
+    "evidence": "Power BI — data visualization and dashboard development.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+
+  {
+    "id": "e11",
+    "query": "What projects involved machine learning?",
+    "evidence": "Skin Cancer Detection — developed CNN-based models for dermoscopic and clinical image classification using TensorFlow and Keras.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e12",
+    "query": "What projects involved machine learning?",
+    "evidence": "Local RAG Project — private semantic search and retrieval application.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e13",
+    "query": "What projects involved machine learning?",
+    "evidence": "Skin Cancer Detection — trained models with focal loss, Mixup and class weights.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e14",
+    "query": "What projects involved machine learning?",
+    "evidence": "SalesFlow CRM — customer relationship management application.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+
+  {
+    "id": "e15",
+    "query": "Where did this person work with AI agents?",
+    "evidence": "Microsoft Türkiye — AI Engineering Intern. Worked with Azure AI Foundry, local LLMs, AI agents and RAG.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e16",
+    "query": "Where did this person work with AI agents?",
+    "evidence": "Cubewise Türkiye — worked with IBM Planning Analytics, TM1, MDX and TurboIntegrator.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e17",
+    "query": "Where did this person work with AI agents?",
+    "evidence": "Microsoft AI Innovators Program Certificate — coursework included AI agents and RAG pipelines.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e18",
+    "query": "Where did this person work with AI agents?",
+    "evidence": "Microsoft Türkiye internship included practical work involving agentic AI development.",
+    "label": "SUPPORTS"
+  },
+
+  {
+    "id": "e19",
+    "query": "What programming languages does this person know?",
+    "evidence": "Programming Languages: Python, Java, C++.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e20",
+    "query": "What programming languages does this person know?",
+    "evidence": "Technologies: TensorFlow, Keras, Scikit-learn and FastAPI.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e21",
+    "query": "What programming languages does this person know?",
+    "evidence": "PCAP: Programming Essentials in Python — OpenEDG Python Institute.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e22",
+    "query": "What programming languages does this person know?",
+    "evidence": "Languages: Turkish (Native), English, German.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+
+  {
+    "id": "e23",
+    "query": "What certificates involve data visualization?",
+    "evidence": "NTT DATA Data Visualization Program (2024) — data visualization using Power BI.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e24",
+    "query": "What certificates involve data visualization?",
+    "evidence": "Huawei Cloud HCCDA–AI — ModelArts, LLM fine-tuning and RAG-based search.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e25",
+    "query": "What certificates involve data visualization?",
+    "evidence": "Data Analyst Boostcamp — data analysis techniques using Google Cloud.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e26",
+    "query": "What certificates involve data visualization?",
+    "evidence": "NTT DATA program focused on Power BI dashboards and data visualization.",
+    "label": "SUPPORTS"
+  },
+
+  {
+    "id": "e27",
+    "query": "Which evidence describes professional AI experience?",
+    "evidence": "Microsoft Türkiye — AI Engineering Intern. Worked with Azure AI Foundry, local LLMs, AI agents and RAG pipelines.",
+    "label": "SUPPORTS"
+  },
+  {
+    "id": "e28",
+    "query": "Which evidence describes professional AI experience?",
+    "evidence": "Microsoft AI Innovators Program Certificate — Azure AI Foundry, local LLMs, AI agents and RAG pipelines.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e29",
+    "query": "Which evidence describes professional AI experience?",
+    "evidence": "Huawei Cloud HCCDA–AI Certificate — ModelArts, LLM fine-tuning and RAG.",
+    "label": "DOES_NOT_SUPPORT"
+  },
+  {
+    "id": "e30",
+    "query": "Which evidence describes professional AI experience?",
+    "evidence": "AI Engineering Intern — developed hands-on experience with agentic AI systems during an internship.",
+    "label": "SUPPORTS"
+  }
+]

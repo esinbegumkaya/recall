@@ -1,0 +1,102 @@
+[
+  {
+    "id": "q01",
+    "query": "What machine learning projects has this person built?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "PROJECTS"
+      }
+    ]
+  },
+  {
+    "id": "q02",
+    "query": "What AI engineering work experience does this person have?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "EXPERIENCE"
+      }
+    ]
+  },
+  {
+    "id": "q03",
+    "query": "Which project uses deep learning for skin lesion classification?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "PROJECTS"
+      }
+    ]
+  },
+  {
+    "id": "q04",
+    "query": "Which technologies and programming languages does this person know?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "SKILLS, LANGUAGES & INTERESTS"
+      }
+    ]
+  },
+  {
+    "id": "q05",
+    "query": "What certificates mention machine learning or AI?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "CERTIFICATES"
+      }
+    ]
+  },
+  {
+    "id": "q06",
+    "query": "Where is Azure AI Foundry mentioned in professional experience?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "EXPERIENCE"
+      }
+    ]
+  },
+  {
+    "id": "q07",
+    "query": "Which project used PyTorch and scikit-learn?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "PROJECTS"
+      }
+    ]
+  },
+  {
+    "id": "q08",
+    "query": "Where is the Local RAG Project documented?",
+    "relevant": [
+      {
+        "file_name": "project.md",
+        "section_name": null
+      }
+    ]
+  },
+  {
+    "id": "q09",
+    "query": "Which file contains the hello recall Python example?",
+    "relevant": [
+      {
+        "file_name": "example.py",
+        "section_name": null
+      }
+    ]
+  },
+  {
+    "id": "q10",
+    "query": "Which note says Recall semantic search has changed?",
+    "relevant": [
+      {
+        "file_name": "notes.txt",
+        "section_name": null
+      }
+    ]
+  }
+]

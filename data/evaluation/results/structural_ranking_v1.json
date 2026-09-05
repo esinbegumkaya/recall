@@ -1,0 +1,66 @@
+{
+  "experiment": "structural_ranking_v1",
+  "corpus_chunks": 18,
+  "development_queries": 10,
+  "validation_queries": 10,
+
+  "embedding_model": "qwen3-embedding-0.6b",
+
+  "pipeline": {
+    "base_retrieval": "dense_cosine_similarity",
+    "section_boost": 0.075,
+    "heading_penalty": 0.05,
+    "heading_penalty_mode": "CONTENT_SEARCH_only",
+    "query_modes": [
+      "CONTENT_SEARCH",
+      "FILE_LOOKUP"
+    ]
+  },
+
+  "development": {
+    "dense": {
+      "hit_at_1": 0.8,
+      "hit_at_3": 0.9,
+      "hit_at_5": 1.0,
+      "mrr": 0.875
+    },
+    "structural_dense": {
+      "hit_at_1": 1.0,
+      "hit_at_3": 1.0,
+      "hit_at_5": 1.0,
+      "mrr": 1.0
+    }
+  },
+
+  "validation": {
+    "dense": {
+      "hit_at_1": 0.7,
+      "hit_at_3": 0.9,
+      "hit_at_5": 1.0,
+      "mrr": 0.792
+    },
+    "structural_dense": {
+      "hit_at_1": 0.9,
+      "hit_at_3": 1.0,
+      "hit_at_5": 1.0,
+      "mrr": 0.95
+    }
+  },
+
+  "known_failures": [
+    {
+      "query_id": "v01",
+      "issue": "Correct PROJECTS result improved from rank 4 to rank 2 but EXPERIENCE remains rank 1."
+    },
+    {
+      "query_id": "v03",
+      "issue": "Keyword-based intent detector predicts EXPERIENCE although PROJECTS is relevant."
+    },
+    {
+      "query_id": "v04",
+      "issue": "The phrase 'experience with' causes EXPERIENCE intent although SKILLS is relevant."
+    }
+  ],
+
+  "conclusion": "Structural dense retrieval outperformed the dense baseline on the held-out validation set. The current default retrieval configuration is dense semantic retrieval with conservative section-aware boosting and query-mode-aware heading penalties."
+}

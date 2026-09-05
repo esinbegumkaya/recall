@@ -1,0 +1,102 @@
+[
+  {
+    "id": "v01",
+    "query": "What hands-on artificial intelligence projects are described?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "PROJECTS"
+      }
+    ]
+  },
+  {
+    "id": "v02",
+    "query": "Where did this person work with AI agents and RAG systems professionally?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "EXPERIENCE"
+      }
+    ]
+  },
+  {
+    "id": "v03",
+    "query": "Find the work involving medical image classification.",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "PROJECTS"
+      }
+    ]
+  },
+  {
+    "id": "v04",
+    "query": "What cloud platforms does this person have experience with?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "SKILLS, LANGUAGES & INTERESTS"
+      }
+    ]
+  },
+  {
+    "id": "v05",
+    "query": "What formal training has this person completed in artificial intelligence?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "CERTIFICATES"
+      }
+    ]
+  },
+  {
+    "id": "v06",
+    "query": "Find the internship involving Microsoft AI tools.",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "EXPERIENCE"
+      }
+    ]
+  },
+  {
+    "id": "v07",
+    "query": "Where was EfficientNetV2 used?",
+    "relevant": [
+      {
+        "file_name": "Esin_Begum_Kaya_CV_092026.pdf",
+        "section_name": "PROJECTS"
+      }
+    ]
+  },
+  {
+    "id": "v08",
+    "query": "Find the document describing the local retrieval augmented generation project.",
+    "relevant": [
+      {
+        "file_name": "project.md",
+        "section_name": null
+      }
+    ]
+  },
+  {
+    "id": "v09",
+    "query": "I remember having a tiny Python demo for Recall. Where is it?",
+    "relevant": [
+      {
+        "file_name": "example.py",
+        "section_name": null
+      }
+    ]
+  },
+  {
+    "id": "v10",
+    "query": "Which file contains the note about the semantic search being modified?",
+    "relevant": [
+      {
+        "file_name": "notes.txt",
+        "section_name": null
+      }
+    ]
+  }
+]
