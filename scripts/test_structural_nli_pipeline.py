@@ -37,6 +37,7 @@ from recall.evidence import (
 
 from recall.evidence_gate import (
     filter_by_evidence_type,
+    filter_by_topic,
 )
 
 from recall.nli_judge import (
@@ -215,16 +216,45 @@ def main():
             "-" * 70
         )
 
+    topical_units = (
+        filter_by_topic(
+            query=query,
+            evidence_units=(
+                gated_units
+            ),
+        )
+    )
+
+    print(
+        "\n4. AFTER TOPICAL GATE\n"
+    )
+
+    for index, unit in enumerate(
+        topical_units,
+        start=1,
+    ):
+        print(
+            f"{index}. "
+            f"[{unit.get('section_name')}]"
+        )
+
+        print(
+            unit["text"]
+        )
+
+        print(
+            "-" * 70
+        )
     judge = LocalNLIJudge()
 
     print(
-        "\n4. NLI VALIDATION\n"
+        "\n5. NLI VALIDATION\n"
     )
 
     accepted_units = []
 
     for index, unit in enumerate(
-        gated_units,
+        topical_units,
         start=1,
     ):
         result = judge.judge(
@@ -272,7 +302,7 @@ def main():
             )
 
     print(
-        "\n5. FINAL EVIDENCE\n"
+        "\n6. FINAL EVIDENCE\n"
     )
 
     if not accepted_units:
@@ -290,6 +320,12 @@ def main():
                 f"{unit['text']}"
             )
 
+            if unit.get("parent_text"):
+                print(
+                    f"   Parent: "
+                    f"{unit['parent_text']}"
+                )
+
             print(
                 f"   Semantic: "
                 f"{unit['evidence_score']:.4f}"
@@ -305,3 +341,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+

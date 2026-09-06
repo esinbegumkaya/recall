@@ -220,3 +220,65 @@ class LocalNLIJudge:
             "scores": scores,
             "hypothesis": hypothesis,
         }
+
+    def judge_claim(
+        self,
+        claim: str,
+        evidence_text: str,
+    ) -> Dict:
+        inputs = (
+            self.tokenizer(
+                evidence_text,
+                claim,
+                return_tensors="pt",
+                truncation=True,
+                max_length=512,
+            )
+        )
+
+        with torch.no_grad():
+            output = self.model(
+                **inputs
+            )
+
+        probabilities = (
+            torch.softmax(
+                output.logits,
+                dim=-1,
+            )[0]
+        )
+
+        scores = {}
+
+        for index, probability in enumerate(
+            probabilities
+        ):
+            label = self.id2label.get(
+                index,
+                str(index),
+            )
+
+            scores[label] = float(
+                probability
+            )
+
+        entailment_score = 0.0
+
+        for label, score in scores.items():
+            if "entail" in label:
+                entailment_score = score
+                break
+
+        return {
+            "label": (
+                "SUPPORTS"
+                if entailment_score >= 0.5
+                else "DOES_NOT_SUPPORT"
+            ),
+            "entailment_score": (
+                entailment_score
+            ),
+            "scores": scores,
+            "hypothesis": claim,
+        }
+

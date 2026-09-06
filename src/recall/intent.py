@@ -110,6 +110,71 @@ def detect_section_intent(query):
         query
     )
 
+    normalized_query = (
+        query.lower().strip()
+    )
+
+    # Explicit technical-topic questions about a person's
+    # work should resolve to EXPERIENCE rather than PROJECTS.
+    #
+    # Generic verbs such as "build", "built", "developed"
+    # are not sufficient evidence for PROJECTS when the query
+    # explicitly asks about professional technical work.
+    technical_topic_terms = {
+        "rag",
+        "llm",
+        "llms",
+        "agent",
+        "agents",
+        "agentic",
+        "ai",
+        "artificial",
+        "intelligence",
+        "machine",
+        "learning",
+        "deep",
+        "nlp",
+        "azure",
+        "python",
+        "java",
+        "cloud",
+        "tensorflow",
+        "keras",
+        "pytorch",
+    }
+
+    experience_terms = {
+        "work",
+        "worked",
+        "professionally",
+        "intern",
+        "internship",
+        "job",
+        "employment",
+        "employer",
+        "company",
+    }
+
+    has_technical_topic = bool(
+        query_tokens
+        & technical_topic_terms
+    )
+
+    has_experience_signal = bool(
+        query_tokens
+        & experience_terms
+    )
+
+    if (
+        has_technical_topic
+        and (
+            has_experience_signal
+            or "did this person" in normalized_query
+            or "where did this person" in normalized_query
+        )
+    ):
+        return "EXPERIENCE"
+
     strong_scores = {}
 
     for section, keywords in (

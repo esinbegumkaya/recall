@@ -293,3 +293,244 @@ def filter_by_evidence_type(
     # If no evidence matches the inferred type,
     # do not destroy retrieval completely.
     return evidence_units
+AI_AGENT_TOPIC_TERMS = {
+    "ai agent",
+    "ai agents",
+    "agentic ai",
+    "agentic workflow",
+    "agentic workflows",
+    "autonomous agent",
+    "autonomous agents",
+    "multi-agent",
+    "multi-agent system",
+    "multi-agent systems",
+}
+
+RAG_TOPIC_TERMS = {
+    "rag",
+    "rag pipeline",
+    "rag pipelines",
+    "retrieval augmented generation",
+    "retrieval-augmented generation",
+}
+
+QUANTUM_TOPIC_TERMS = {
+    "quantum computing",
+    "quantum computer",
+    "quantum computers",
+    "quantum computing researcher",
+}
+
+TOPIC_GROUPS = {
+    "AI_AGENT": AI_AGENT_TOPIC_TERMS,
+    "RAG": RAG_TOPIC_TERMS,
+    "QUANTUM": QUANTUM_TOPIC_TERMS,
+}
+
+
+def requires_ai_agent_topic(
+    query: str,
+) -> bool:
+    return contains_term(
+        query,
+        AI_AGENT_TOPIC_TERMS,
+    )
+
+
+def has_ai_agent_topic(
+    text: str,
+) -> bool:
+    return contains_term(
+        text,
+        AI_AGENT_TOPIC_TERMS,
+    )
+
+
+def extract_dynamic_topic(
+    query: str,
+) -> Optional[str]:
+    """
+    Extract a concrete topic from common factual
+    questions without requiring a hard-coded taxonomy.
+
+    Examples:
+    - "Where did this person use Kubernetes?"
+      -> "Kubernetes"
+    - "Did this person use IBM Planning Analytics?"
+      -> "IBM Planning Analytics"
+    - "Which document discusses GDPR compliance?"
+      -> "GDPR compliance"
+    """
+    normalized = (
+        query
+        .strip()
+    )
+
+    patterns = [
+        (
+            r"^(?:where\s+)?did\s+this\s+person\s+"
+            r"(?:use|build|develop|create|implement|"
+            r"work\s+with|work\s+on|have\s+experience\s+with)"
+            r"\s+(.+?)\??$"
+        ),
+        (
+            r"^does\s+this\s+person\s+know\s+"
+            r"(.+?)\??$"
+        ),
+        (
+            r"^where\s+is\s+(.+?)\s+mentioned\??$"
+        ),
+        (
+            r"^which\s+(?:document|file|source)\s+"
+            r"(?:mentions|discusses|covers)\s+"
+            r"(.+?)\??$"
+        ),
+    ]
+
+    topic = None
+
+    for pattern in patterns:
+        match = re.match(
+            pattern,
+            normalized,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            topic = (
+                match.group(1)
+                .strip()
+                .rstrip("?")
+                .strip()
+            )
+            break
+
+    if not topic:
+        return None
+
+    # Remove explicit provenance attribution from
+    # the topic itself. Provenance is validated later.
+    topic = re.split(
+        r"\s+(?:at|for|during)\s+",
+        topic,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
+
+    if not topic:
+        return None
+
+    return topic
+
+
+def detect_topic_requirement(
+    query: str,
+) -> Optional[str]:
+    query_text = (
+        query
+        .lower()
+        .strip()
+    )
+
+    if contains_term(
+        query_text,
+        AI_AGENT_TOPIC_TERMS,
+    ):
+        return "AI_AGENT"
+
+    if contains_term(
+        query_text,
+        RAG_TOPIC_TERMS,
+    ):
+        return "RAG"
+
+    if contains_term(
+        query_text,
+        QUANTUM_TOPIC_TERMS,
+    ):
+        return "QUANTUM"
+
+    dynamic_topic = extract_dynamic_topic(
+        query
+    )
+
+    if dynamic_topic:
+        return (
+            "DYNAMIC::"
+            + dynamic_topic
+        )
+
+    return None
+
+
+def has_topic(
+    text: str,
+    topic: str,
+) -> bool:
+    if topic.startswith(
+        "DYNAMIC::"
+    ):
+        dynamic_topic = topic.split(
+            "::",
+            1,
+        )[1].strip()
+
+        if not dynamic_topic:
+            return False
+
+        return contains_term(
+            text,
+            {
+                dynamic_topic,
+            },
+        )
+
+    terms = TOPIC_GROUPS.get(
+        topic,
+        set(),
+    )
+
+    if not terms:
+        return False
+
+    return contains_term(
+        text,
+        terms,
+    )
+
+
+def filter_by_topic(
+    query: str,
+    evidence_units: List[Dict],
+) -> List[Dict]:
+    required_topic = detect_topic_requirement(
+        query
+    )
+
+    if required_topic is None:
+        return []
+
+    matching_units = []
+
+    for unit in evidence_units:
+        text = (
+            unit.get("text", "")
+            .strip()
+        )
+
+        if has_topic(
+            text,
+            required_topic,
+        ):
+            updated_unit = dict(unit)
+
+            updated_unit[
+                "topic_match"
+            ] = required_topic
+
+            matching_units.append(
+                updated_unit
+            )
+
+    return matching_units
+
