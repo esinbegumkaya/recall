@@ -1,908 +1,600 @@
-# MemoRAG
+# Recall
 
-**MemoRAG** is a local knowledge retrieval assistant designed to help users find information across files on their computer without requiring them to remember **where a file is stored, what it is called, or which version contains the information they need**.
+**A privacy-first, local AI assistant for finding files across your computer using natural language.**
 
-MemoRAG is being built as a **local-first knowledge layer** over user-authorized files. It combines document discovery, semantic retrieval, evidence validation, provenance tracking, and grounded generation so that answers are not only relevant, but traceable to their exact supporting sources.
+Recall indexes files on your computer and lets you search for them the way you would ask another person.
 
-> **Full Product Status: ~70–75%**  
-> **Core RAG & Evidence Engine: ~95%**
-
----
-
-## Why MemoRAG?
-
-Personal knowledge is often fragmented across:
-
-- Documents
-- Downloads
-- Desktop folders
-- Reports
-- Contracts
-- Notes
-- Source files
-- Multiple revisions of the same document
-
-The difficult part is often not knowing *what* to search for, but remembering:
-
-- Where the file was saved
-- What the file was called
-- Which copy is current
-- Which version contains a specific fact
-- Which document originally mentioned something
-
-MemoRAG is being built to remove that burden.
-
-> **Ask for the information. MemoRAG finds the file, the relevant version, the evidence, and the source.**
-
----
-
-# Product Goals
-
-MemoRAG aims to provide:
-
-- [x] Fully local document retrieval and question answering
-- [x] Semantic search over indexed content
-- [x] Evidence-level validation before generation
-- [x] Hallucination-resistant grounded answers
-- [x] Source-aware citations
-- [x] Multi-part question handling
-- [x] Provenance-aware evidence association
-- [x] Incremental document indexing
-- [ ] Automatic discovery across user-authorized folders and drives
-- [ ] File-change monitoring and background re-indexing
-- [ ] Duplicate and near-duplicate document detection
-- [ ] Document version-family detection
-- [ ] Latest/relevant version resolution
-- [ ] Cross-document and cross-version retrieval
-- [ ] A polished local knowledge workspace UI
-
----
-
-# Target Architecture
+Instead of remembering exact filenames, folders, or keywords, you can ask:
 
 ```text
-Local Computer
-      ↓
-User-Authorized Folders / Drives
-      ↓
-File Discovery & Filesystem Watcher
-      ↓
-Metadata + Hash Extraction
-      ↓
-Duplicate / Version Resolution
-      ↓
-Parsing & Chunking
-      ↓
-Local Embeddings + Knowledge Index
-      ↓
-Semantic + Metadata Retrieval
-      ↓
-Section Intent Detection
-      ↓
-Evidence Unit Construction
-      ↓
-Structural Gate
-      ↓
-Topical Gate
-      ↓
-NLI Validation
-      ↓
-Overlap Deduplication
-      ↓
-Parent / Provenance Association
-      ↓
-Grounded Generation
-      ↓
-Citation + Claim Validation
-      ↓
-Answer + Exact Source + Version
+Find my most recent CV.
+Where is the document I wrote about RAG?
+Find the presentation about artificial intelligence.
+Which file mentions Microsoft and AI agents?
+Find the network assignment from last week.
 ```
 
-The evidence-validation portion of this architecture is already largely implemented. File-system intelligence, version awareness, product UI, and broader evaluation remain under development.
+Recall combines local query understanding, metadata search, full-text retrieval, fuzzy filename matching, semantic similarity, and evidence validation to identify the most relevant files while keeping the search pipeline local.
 
 ---
 
-# Implemented
+## Why Recall?
 
-## 1. Local Document Processing
+Traditional desktop search works well when you already know what a file is called.
 
-- [x] Local document ingestion
-- [x] TXT parsing
-- [x] Markdown parsing
-- [x] Python/source-text parsing
-- [x] PDF parsing
-- [x] Chunk-based document processing
-- [x] Configurable chunk size and overlap
-- [x] Page metadata preservation
-- [x] Section metadata preservation
-- [x] Incremental indexing
-- [x] SQLite-backed document and chunk storage
-- [x] Local embedding generation
+Real searches are often much less precise.
 
-MemoRAG can already convert supported local documents into searchable chunks while retaining provenance metadata needed later in the evidence pipeline.
+You may remember:
 
----
+* what the document was about,
+* roughly when you worked on it,
+* a company or person mentioned inside it,
+* the type of document,
+* part of its filename,
+* or simply the idea you were looking for.
 
-## 2. Semantic Retrieval
+Recall turns those incomplete memories into structured search signals and searches across both **file metadata and file contents**.
 
-- [x] Semantic document search
-- [x] Retrieval scoring
-- [x] Top-k source retrieval
-- [x] File-level provenance
-- [x] Chunk-level provenance
-- [x] Page-level provenance
-- [x] Section-aware retrieval metadata
+The goal is simple:
 
-Retrieval is intentionally treated as the beginning of the evidence pipeline rather than proof that a retrieved passage actually answers the question.
+> **You should not need to remember where a file is stored in order to find it.**
 
 ---
 
-## 3. Section Intent Detection
+## Key Features
 
-MemoRAG detects the likely document section required by a question.
+### Natural-Language File Search
+
+Search using conversational queries instead of exact filenames.
 
 Examples:
 
 ```text
-"What projects did this person build?"
-→ PROJECTS
-
-"Where did this person work with AI agents?"
-→ EXPERIENCE
+Find my latest CV.
+Find the document where I wrote about RAG.
+Where are my Turkish notes?
+Find my AI presentation.
 ```
 
-Implemented:
+The query planner extracts signals such as:
 
-- [x] Section intent detection
-- [x] EXPERIENCE detection
-- [x] PROJECT detection
-- [x] SKILL detection
-- [x] CERTIFICATE detection
-- [x] Conservative fallback when section filtering would remove all evidence
-
----
-
-## 4. Evidence Unit Construction
-
-Retrieved chunks are converted into smaller evidence units before validation.
-
-Implemented:
-
-- [x] Evidence-unit extraction
-- [x] Source metadata preservation
-- [x] Page metadata preservation
-- [x] Section metadata preservation
-- [x] Chunk provenance preservation
-- [x] Unit-level indexing
-- [x] Heading detection
-- [x] Parent-child evidence association
-- [x] Mixed evidence splitting
-
-This allows MemoRAG to reason over smaller factual units instead of treating an entire retrieved chunk as a single piece of evidence.
+* semantic concepts
+* lexical keywords
+* filename clues
+* content clues
+* file-type hints
+* location hints
+* date preferences
+* requested actions
 
 ---
 
-## 5. Structural Evidence Gate
+### Multilingual & Typo-Tolerant Queries
 
-The structural gate checks whether an evidence unit has the appropriate structural type for the question.
+Recall is designed to handle flexible queries rather than requiring a rigid command syntax.
 
-Supported evidence categories currently include:
+Queries can contain:
 
-- EXPERIENCE
-- PROJECT
-- SKILL
-- CERTIFICATE
-
-Additional structural filtering exists for areas such as:
-
-- Programming languages
-- Cloud technologies
-- AI technologies
-
-Implemented:
-
-- [x] Structural evidence classification
-- [x] Boundary-aware term matching
-- [x] False-positive reduction for overlapping terms
-- [x] Conservative structural fallback
-
----
-
-## 6. Topical Evidence Gate
-
-MemoRAG separates **topic relevance** from structural relevance.
-
-Known synonym families currently cover concepts such as:
-
-- AI agents
-- Agentic AI
-- Agentic workflows
-- RAG
-- Retrieval-Augmented Generation
-- Quantum computing
-
-The system does **not** rely exclusively on a hard-coded topic taxonomy.
-
-Implemented:
-
-- [x] Known topic synonym groups
-- [x] Boundary-aware topic matching
-- [x] Dynamic topic extraction
-- [x] Generic topic detection for previously unseen technologies
-- [x] Topic filtering before NLI
-
-Examples:
-
-```text
-"Where did this person use Kubernetes?"
-→ Dynamic topic: Kubernetes
-
-"Did this person use IBM Planning Analytics?"
-→ Dynamic topic: IBM Planning Analytics
-```
-
----
-
-## 7. Dynamic Topic Extraction
-
-MemoRAG can extract concrete topics from common factual questions without requiring every possible subject to be predefined.
-
-Tested examples include:
-
-```text
-Kubernetes
-PostgreSQL
-IBM Planning Analytics
-Apache Airflow
-GDPR compliance
-```
-
-This keeps the system general-purpose instead of turning the evidence gate into a document-specific taxonomy.
-
----
-
-## 8. NLI Evidence Validation
-
-MemoRAG uses a local **Natural Language Inference (NLI)** model to determine whether candidate evidence actually supports a query-derived hypothesis.
-
-Current model:
-
-```text
-cross-encoder/nli-deberta-v3-small
-```
-
-Implemented:
-
-- [x] Local NLI inference
-- [x] Entailment scoring
-- [x] Query-to-hypothesis generation
-- [x] Evidence acceptance/rejection
-- [x] Independent NLI validation for compound questions
-- [x] Unsupported evidence rejection
-
-Different validation stages intentionally retain separate semantics instead of changing thresholds merely to compensate for retrieval or wording problems.
-
----
-
-## 9. Parent / Provenance Association
-
-MemoRAG preserves relationships between evidence and its surrounding structural context.
-
-Example:
-
-```text
-Parent:
-Microsoft AI Innovators Program — AI Engineering Intern 2026
-
-Evidence:
-Implement Python-based AI solutions and agentic AI workflows...
-```
-
-This allows answers to attribute evidence to the correct organization, role, project, or other parent context.
-
-Implemented:
-
-- [x] Heading detection
-- [x] Parent-child association
-- [x] Parent metadata preservation
-- [x] Provenance-aware generation
-- [x] Deterministic provenance validation
-- [x] Wrong-parent attribution rejection
-
----
-
-## 10. Overlap-Aware Evidence Deduplication
-
-Chunk overlap can produce partial duplicates of the same evidence.
-
-MemoRAG detects these overlaps and preserves the higher-quality evidence unit.
-
-The deduplication logic considers:
-
-- File
-- Page
-- Section
-- Chunk proximity
-- Supporting subquery
-- Token overlap
-- Evidence completeness
-- Parent context availability
-
-Implemented:
-
-- [x] Exact evidence deduplication
-- [x] Token-overlap scoring
-- [x] Near-duplicate detection
-- [x] Evidence quality scoring
-- [x] Adjacent chunk overlap suppression
-
-This prevents incomplete overlap fragments from becoming independent generation sources.
-
----
-
-## 11. Compound Query Handling
-
-MemoRAG can decompose multi-part questions and process each subquestion independently.
-
-Example:
-
-```text
-Where did this person work with AI agents,
-and where did this person use IBM Planning Analytics?
-```
-
-Processing flow:
-
-```text
-Subquery 1
-    ↓
-Topical Filtering
-    ↓
-NLI
-    ↓
-Evidence Selection
-    ↓
-Generation
-    ↓
-Validation
-
-Subquery 2
-    ↓
-Topical Filtering
-    ↓
-NLI
-    ↓
-Evidence Selection
-    ↓
-Generation
-    ↓
-Validation
-
-Validated Subanswers
-    ↓
-Final Composition
-```
-
-Implemented:
-
-- [x] Compound-query decomposition
-- [x] Independent topical filtering
-- [x] Independent NLI validation
-- [x] Evidence-to-subquery mapping
-- [x] Independent subanswer generation
-- [x] Independent subanswer validation
-- [x] Validated answer composition
-
----
-
-## 12. Grounded Answer Generation
-
-The generator receives validated evidence rather than unrestricted retrieved context.
-
-Generation context can contain:
-
-- Source number
-- File
-- Page
-- Section
-- Chunk
-- Parent context
-- Evidence text
-- Supporting subquery
-
-Implemented:
-
-- [x] Evidence-grounded prompting
-- [x] Deterministic generation settings
-- [x] Evidence terminology guidance
-- [x] Compound answer generation
-- [x] Exact abstention behavior when evidence is insufficient
-
----
-
-## 13. Citation Validation
-
-Generated factual claims must reference valid evidence sources.
-
-Example:
-
-```text
-The person worked with AI agents at the Microsoft AI Innovators Program. [Source 1]
-```
-
-Implemented:
-
-- [x] Source-number validation
-- [x] Claim-to-source extraction
-- [x] Invalid citation rejection
-- [x] Multi-claim citation validation
-- [x] Swapped-source rejection
-- [x] Unsupported secondary-claim rejection
-
----
-
-## 14. Post-Generation Claim Validation
-
-MemoRAG does not assume that grounded prompting alone prevents hallucinations.
-
-Current validation flow:
-
-```text
-Generated Claim
-      ↓
-Citation Validation
-      ↓
-Provenance Validation
-      ↓
-Semantic Evidence Validation
-      ↓
-Semantic Contract Validation
-```
-
-Implemented:
-
-- [x] Evidence-to-claim NLI validation
-- [x] Strict claim-validation threshold
-- [x] Separation of provenance and semantic validation
-- [x] Semantic claim extraction
-- [x] Supporting hypothesis preservation
-- [x] Semantic-contract fallback
-- [x] Topic-drift rejection
-
-The semantic-contract mechanism handles cases where generated wording faithfully expresses an already validated query hypothesis but direct evidence-to-generated-claim NLI is overly sensitive to paraphrasing.
-
----
-
-# Hallucination Protection
-
-MemoRAG uses several independent safeguards instead of relying on retrieval similarity alone.
-
-```text
-Semantic Retrieval
-        ↓
-Structural Gate
-        ↓
-Topical Gate
-        ↓
-Evidence NLI
-        ↓
-Provenance Association
-        ↓
-Grounded Generation
-        ↓
-Citation Validation
-        ↓
-Provenance Validation
-        ↓
-Claim NLI / Semantic Contract
-```
-
-This layered architecture is designed to reduce:
-
-- Semantically similar but irrelevant evidence
-- Incorrect topic matches
-- Wrong organization/project attribution
-- Unsupported generated claims
-- Incorrect citations
-- Semantic topic drift
-- Duplicate evidence caused by chunk overlap
-
----
-
-# Testing
-
-A regression suite is in place for the evidence pipeline.
-
-Current coverage includes:
-
-- [x] Structural evidence filtering
-- [x] AI-agent evidence
-- [x] RAG evidence
-- [x] Unsupported topics
-- [x] Dynamic topic extraction
-- [x] Parent/provenance preservation
-- [x] Citation validation
-- [x] Multi-claim answers
-- [x] Swapped citations
-- [x] Wrong-parent attribution
-- [x] Unsupported secondary claims
-- [x] Semantic-contract fallback
-- [x] Semantic topic-drift rejection
-- [x] Evidence overlap deduplication
-
-Current regression checkpoint:
-
-```text
-42 tests passing
-```
-
----
-
-# Current Example
-
-### Query
-
-```text
-Where did this person work with AI agents,
-and where did this person use IBM Planning Analytics?
-```
-
-### Grounded Output
-
-```text
-The person worked with AI agents at the Microsoft AI Innovators Program
-— AI Engineering Intern 2026. [Source 1]
-
-The person used IBM Planning Analytics with Watson (TM1) to support
-financial planning projects during their internship at Cubewise,
-Türkiye, from 2025 to 2026. [Source 2]
-```
-
-Each subanswer is independently grounded and validated against its corresponding evidence.
-
-> This CV-based example is currently used as a development fixture. **MemoRAG itself is not intended to be CV-specific.**
-
----
-
-# Roadmap
-
-## 1. Evidence Pipeline Hardening
-
-- [ ] Expand regression coverage across additional query formulations
-- [ ] Test ambiguous queries
-- [ ] Test partially supported compound queries
-- [ ] Test larger compound questions
-- [ ] Stress-test dynamic topic extraction
-- [ ] Test additional topic synonyms and paraphrases
-- [ ] Expand negative evidence tests
-- [ ] Expand provenance edge-case tests
-
----
-
-## 2. Local Knowledge Library & File Discovery
-
-MemoRAG should eventually discover knowledge without requiring the user to manually upload or locate every file.
-
-- [ ] Select user-authorized indexing locations
-- [ ] Scan selected folders and drives recursively
-- [ ] Automatic supported-file discovery
-- [ ] Preserve exact file paths
-- [ ] Extract filesystem metadata
-- [ ] Extract document metadata where available
-- [ ] Content hashing
-- [ ] Detect unchanged files during subsequent scans
-- [ ] Detect newly created files
-- [ ] Detect modified files
-- [ ] Detect deleted files
-- [ ] Detect moved or renamed files
-- [ ] Background incremental indexing
-- [ ] Filesystem watcher
-- [ ] Ignore rules for system/cache/build directories
-- [ ] Large-library indexing controls
-- [ ] User privacy and indexing permissions
-
-Initial target locations may include user-authorized areas such as:
-
-```text
-Documents
-Desktop
-Downloads
-OneDrive / synchronized folders
-Custom folders
-Optional additional drives
-```
-
-MemoRAG should not require unrestricted disk access by default. The user controls which locations become part of the local knowledge index.
-
----
-
-## 3. Duplicate & Version Intelligence
-
-A central product goal is to answer questions even when users do not remember **which version** contains the information.
+* English
+* Turkish
+* incomplete descriptions
+* approximate filenames
+* spelling mistakes
+* mixed semantic and metadata constraints
 
 For example:
 
 ```text
-contract.docx
-contract_final.docx
-contract_final_v2.docx
-contract_FINAL_revised.pdf
+en güncel cvmi getir
+cvmn en gncelni getir
+rag hakkında yazdığım belge
+Where is my most recent presentation about AI?
 ```
 
-These should not necessarily be treated as four unrelated documents.
-
-Planned:
-
-- [ ] Exact duplicate detection using hashes
-- [ ] Near-duplicate document detection
-- [ ] Document similarity scoring
-- [ ] Version-family grouping
-- [ ] Filename-based version signals
-- [ ] Modification-time signals
-- [ ] Content-based version relationships
-- [ ] Latest-version inference
-- [ ] Relevant-version retrieval
-- [ ] Cross-version evidence comparison
-- [ ] Surface conflicting facts across versions
-- [ ] Preserve exact version provenance
-- [ ] Allow users to inspect a version family
-
-The goal is **not simply to select the newest file**. MemoRAG should retrieve the version that actually contains the requested evidence and clearly identify that version.
-
 ---
 
-## 4. Cross-Document Retrieval
+### Hybrid Retrieval
 
-- [ ] Search across the entire indexed knowledge library
-- [ ] Retrieve evidence from multiple documents
-- [ ] Cross-document source attribution
-- [ ] Handle duplicate evidence across files
-- [ ] Handle contradictory evidence
-- [ ] Rank evidence using semantic and metadata signals
-- [ ] Support questions whose answers are distributed across multiple files
-- [ ] Test large heterogeneous document collections
+Recall does not depend on a single retrieval method.
 
----
-
-## 5. Multi-Document & Format Validation
-
-- [ ] Test MemoRAG on documents other than CVs
-- [ ] Test technical documentation
-- [ ] Test reports
-- [ ] Test contracts
-- [ ] Test personal notes
-- [ ] Test source-code collections
-- [ ] Test multiple documents containing overlapping evidence
-- [ ] Test multiple document versions
-- [ ] Expand supported document formats where useful
-
----
-
-## 6. Retrieval Evaluation
-
-- [ ] Build a small evaluation dataset
-- [ ] Measure retrieval precision
-- [ ] Measure evidence acceptance precision
-- [ ] Measure unsupported-answer rejection rate
-- [ ] Measure citation correctness
-- [ ] Evaluate compound-query performance
-- [ ] Evaluate version-resolution accuracy
-- [ ] Evaluate cross-document retrieval
-- [ ] Measure false-attribution rate
-
----
-
-## 7. UI & Product Layer
-
-MemoRAG should become a **local knowledge workspace** rather than remain a terminal-only demo.
-
-Planned interface:
-
-- [ ] Professional local web/desktop UI
-- [ ] Global **Ask MemoRAG** interface
-- [ ] Knowledge Library
-- [ ] Indexed-location management
-- [ ] Drag-and-drop/manual indexing when desired
-- [ ] Indexing progress and status
-- [ ] Recently changed files
-- [ ] Searchable file browser
-- [ ] Duplicate families
-- [ ] Version families
-- [ ] Source cards
-- [ ] Clickable citations
-- [ ] Expandable evidence inspector
-- [ ] Exact file/page/section/chunk provenance
-- [ ] Validation indicators
-- [ ] Local/private status indicator
-- [ ] Indexing and privacy settings
-
-A citation should eventually allow the user to inspect:
+It combines multiple signals:
 
 ```text
-Source
-  File
-  Exact path
-  Version
-  Page / section
-  Evidence text
-  Parent context
-
-Validation
-  Structural Gate
-  Topical Gate
-  NLI
-  Provenance
-  Claim Validation
+Natural-language query
+        │
+        ▼
+Query Understanding
+        │
+        ▼
+Search Signal Extraction
+        │
+        ├── Filename / path matching
+        ├── Full-text search
+        ├── Metadata / date relevance
+        ├── Fuzzy matching
+        └── Semantic similarity
+        │
+        ▼
+Hybrid Ranking
+        │
+        ▼
+Semantic Reranking
+        │
+        ▼
+Evidence Validation
+        │
+        ▼
+Relevant Files
 ```
 
-The validation internals should remain inspectable without overwhelming the normal answer experience.
-
----
-
-## 8. Code Cleanup
-
-- [ ] Remove temporary debug output
-- [ ] Remove temporary diagnostic scripts
-- [ ] Consolidate configuration constants
-- [ ] Review module boundaries
-- [ ] Improve type hints
-- [ ] Improve internal documentation
-- [ ] Review error handling
-- [ ] Separate development diagnostics from production logging
-
----
-
-## 9. Developer Experience
-
-- [ ] Finalize installation instructions
-- [ ] Document environment setup
-- [ ] Document indexing workflow
-- [ ] Document query workflow
-- [ ] Document local model requirements
-- [ ] Add example commands
-- [ ] Add architecture diagram
-- [ ] Add troubleshooting section
-- [ ] Document privacy model and indexed-location behavior
-
----
-
-## 10. Final Demo
-
-- [ ] Prepare a heterogeneous local document library
-- [ ] Include multiple versions of selected documents
-- [ ] Define representative supported queries
-- [ ] Define hallucination/adversarial queries
-- [ ] Demonstrate "I don't know where the file is" retrieval
-- [ ] Demonstrate version resolution
-- [ ] Demonstrate cross-document retrieval
-- [ ] Demonstrate compound-query handling
-- [ ] Demonstrate provenance validation
-- [ ] Demonstrate unsupported-query abstention
-- [ ] Demonstrate dynamic topic extraction
-- [ ] Demonstrate evidence inspection through the UI
-- [ ] Record final example outputs
-
----
-
-# Development Status
-
-MemoRAG has two useful progress measures because the evidence engine is substantially further along than the complete product.
-
-## Core RAG & Evidence Engine
+This allows Recall to handle both precise searches such as:
 
 ```text
-███████████████████░  ~95%
+Harvard CV
 ```
 
-### Completed
-
-- Local parsing and indexing
-- Semantic retrieval
-- Evidence construction
-- Structural filtering
-- Topical filtering
-- Dynamic topic extraction
-- NLI validation
-- Parent/provenance association
-- Evidence overlap deduplication
-- Compound-query processing
-- Grounded generation
-- Citation validation
-- Post-generation claim validation
-- Regression coverage for key evidence behaviors
-
-Remaining work in this layer is primarily hardening, broader evaluation, cleanup, and edge-case testing.
-
-## Full MemoRAG Product
+and semantic searches such as:
 
 ```text
-███████████████░░░░░  ~70–75%
+the document where I described building AI agents
 ```
 
-### Major Remaining Work
+---
 
-- File-system discovery
-- Filesystem monitoring
-- Full local knowledge-library indexing
-- Duplicate intelligence
-- Version-family detection
-- Version-aware retrieval
-- Cross-document retrieval validation
-- Broader document-format testing
-- Product UI
-- Large-library evaluation
-- Documentation
-- Final demo preparation
+## Privacy-First Architecture
 
-> These percentages are approximate development checkpoints rather than formal engineering metrics and will be revised as the remaining product layers are implemented.
+Recall is designed around **local file discovery**.
+
+The system indexes local files into a local SQLite database and performs retrieval using local components.
+
+The current architecture uses:
+
+* local file crawling
+* local parsing and chunking
+* SQLite metadata storage
+* SQLite FTS5 full-text search
+* local embeddings
+* local semantic reranking
+* local NLI-based evidence validation
+* local query planning
+
+This architecture avoids requiring users to upload their personal documents to a remote search service.
 
 ---
 
-# Privacy Direction
-
-MemoRAG is designed around a **local-first architecture**.
-
-The intended product model is:
-
-- Files remain on the user's machine
-- Indexing locations are explicitly user-authorized
-- Retrieval operates over the local knowledge index
-- Local models are preferred for embeddings, NLI, and generation
-- Exact source provenance remains available to the user
-- Unrelated/system directories are excluded from indexing by default
-
-As the filesystem layer is implemented, permission boundaries and privacy controls will be treated as first-class product requirements.
-
----
-
-# Core Design Principles
-
-## 1. Retrieval is not evidence
-
-A semantically similar chunk is only a candidate. It must pass stronger evidence checks before supporting an answer.
-
-## 2. Generated text is not automatically supported
-
-Generation is followed by citation, provenance, and semantic claim validation.
-
-## 3. The user should not need to remember the file
-
-MemoRAG should locate information across the authorized local knowledge space rather than require the user to identify the source beforehand.
-
-## 4. The user should not need to remember the version
-
-When several revisions exist, MemoRAG should identify the relevant version and preserve exact provenance instead of silently treating all copies as equivalent.
-
-## 5. Provenance must survive the entire pipeline
-
-File, version, page, section, chunk, and parent context should remain traceable from indexing through the final answer.
-
-## 6. Local-first should remain meaningful
-
-Local execution is not only an implementation detail. Privacy, user-controlled indexing scope, and inspectable sources are core product properties.
-
----
-
-# Vision
-
-> ## Your files should behave like searchable memory.
-
-Instead of manually navigating folders, remembering filenames, opening several versions, and searching documents individually, the user should be able to ask for the information directly.
-
-MemoRAG's job is to determine:
+## Architecture
 
 ```text
-What information is being requested?
-        ↓
-Which files may contain it?
-        ↓
-Which version is relevant?
-        ↓
-Which exact evidence supports it?
-        ↓
-Can the generated claim be verified?
-        ↓
-Where did the answer come from?
+                         ┌─────────────────────┐
+                         │     User Query      │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │    Query Planner    │
+                         │   Local Qwen Model  │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                  ┌─────────────────────────────────┐
+                  │      Search Signal Extraction   │
+                  │                                 │
+                  │ concepts · keywords · filename  │
+                  │ content · type · location · date│
+                  └────────────────┬────────────────┘
+                                   │
+                                   ▼
+                  ┌─────────────────────────────────┐
+                  │        Hybrid Retriever         │
+                  │                                 │
+                  │ SQLite FTS5                     │
+                  │ Filename / Path Fuzzy Matching  │
+                  │ Metadata & Recency              │
+                  └────────────────┬────────────────┘
+                                   │
+                                   ▼
+                         ┌─────────────────────┐
+                         │ Semantic Reranker   │
+                         │ Local Embeddings    │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │  Evidence Pipeline  │
+                         │ Structural + Topic  │
+                         │ Gates + Local NLI   │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │   Grounded Result   │
+                         │ File · Path · Page  │
+                         │ Section · Evidence  │
+                         └─────────────────────┘
 ```
 
-The end goal is a **private local knowledge assistant** that can find, validate, and explain information across a user's own files while keeping every answer traceable to its source.
+---
+
+## Retrieval Pipeline
+
+### 1. Local File Crawling
+
+Recall scans configured directories and discovers supported documents while ignoring development and system directories such as virtual environments, Git metadata, caches, and other irrelevant locations.
+
+The crawler collects metadata including:
+
+* file path
+* filename
+* extension
+* file size
+* creation time
+* modification time
+
+---
+
+### 2. Parsing & Chunking
+
+Supported files are parsed into searchable text chunks.
+
+Where available, Recall preserves provenance information such as:
+
+* source file
+* page number
+* section name
+* chunk index
+
+This information is later used to explain why a result was retrieved.
+
+---
+
+### 3. Full-Text Index
+
+Parsed chunks are stored in SQLite and indexed using **FTS5**.
+
+This provides fast lexical retrieval without requiring every file to be embedded during the initial indexing process.
+
+---
+
+### 4. Query Planning
+
+A local language model converts the user's request into structured search signals.
+
+A query can produce signals for:
+
+```text
+concepts
+keywords
+filename_terms
+content_terms
+extensions
+location_terms
+date preferences
+retrieval weights
+```
+
+Deterministic heuristics are available as a fallback if model-based planning is unavailable.
+
+---
+
+### 5. Hybrid Candidate Retrieval
+
+Recall combines:
+
+* FTS lexical relevance
+* filename similarity
+* path similarity
+* fuzzy matching
+* file metadata
+* modification/creation dates
+* query-specific retrieval weights
+
+Different queries therefore produce different ranking strategies.
+
+A filename-oriented query can prioritize filenames, while a conceptual query can give semantic evidence more influence.
+
+---
+
+### 6. Lazy Semantic Reranking
+
+Recall deliberately avoids embedding the entire computer during initial indexing.
+
+Instead:
+
+1. lexical and metadata retrieval creates a candidate set,
+2. relevant candidate chunks are selected,
+3. embeddings are generated only when required,
+4. embeddings are cached locally,
+5. semantic similarity reranks the candidates.
+
+This keeps initial indexing substantially lighter while still providing semantic retrieval.
+
+---
+
+### 7. Evidence Validation
+
+For evidence-sensitive queries, Recall applies multiple validation layers.
+
+The evidence pipeline includes:
+
+```text
+Structural Gate
+      ↓
+Topical Gate
+      ↓
+Provenance Constraints
+      ↓
+NLI Validation
+      ↓
+Grounded Evidence
+```
+
+This reduces false-positive evidence caused by semantically similar but unrelated text.
+
+For example, a query asking whether AI-agent work occurred at a specific organization should not accept AI-agent evidence originating from a different organization.
+
+---
+
+## Grounded Results
+
+Recall is designed to return more than a filename.
+
+Results can include:
+
+* filename
+* full local path
+* relevance score
+* modification date
+* page number
+* section
+* supporting text
+* evidence diagnostics
+
+The interface can also open the selected file or its containing folder directly.
+
+---
+
+## User Interface
+
+Recall includes a Streamlit interface focused on file discovery.
+
+The main workflow is intentionally simple:
+
+```text
+Ask a question
+      ↓
+Search my computer
+      ↓
+Understand query
+      ↓
+Search indexed files
+      ↓
+Semantic reranking
+      ↓
+Display ranked files
+```
+
+Search progress is tied to actual retrieval stages rather than a simulated loading animation.
+
+---
+
+## Tech Stack
+
+| Component           | Technology      |
+| ------------------- | --------------- |
+| Language            | Python 3.11     |
+| UI                  | Streamlit       |
+| Database            | SQLite          |
+| Lexical Search      | SQLite FTS5     |
+| Fuzzy Matching      | RapidFuzz       |
+| Local AI Runtime    | Foundry Local   |
+| Query Planner       | Qwen 3.5        |
+| Embeddings          | Qwen3 Embedding |
+| Evidence Validation | DeBERTa NLI     |
+| Testing             | pytest          |
+
+---
+
+## Project Structure
+
+```text
+Recall/
+│
+├── src/
+│   └── recall/
+│       ├── crawler.py
+│       ├── parser.py
+│       ├── chunker.py
+│       ├── database.py
+│       ├── query_planner.py
+│       ├── hybrid_retriever.py
+│       ├── semantic_reranker.py
+│       ├── evidence.py
+│       ├── evidence_gate.py
+│       ├── nli_judge.py
+│       └── engine.py
+│
+├── ui/
+│   └── app.py
+│
+├── scripts/
+│   ├── index_folder.py
+│   └── evaluate_*.py
+│
+├── tests/
+│   └── test_evidence_pipeline.py
+│
+├── data/
+│   ├── evaluation/
+│   └── samples/
+│
+├── requirements.txt
+├── pytest.ini
+└── README.md
+```
+
+---
+
+## Installation
+
+### 1. Clone the repository
+
+```bash
+git clone <repository-url>
+cd memorag
+```
+
+### 2. Create a virtual environment
+
+Windows:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Running Recall
+
+Make the source package available:
+
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+```
+
+Start the interface:
+
+```powershell
+streamlit run .\ui\app.py
+```
+
+Then open the local Streamlit address shown in the terminal.
+
+---
+
+## Testing
+
+Run the regression suite with:
+
+```bash
+pytest -q
+```
+
+Current regression status:
+
+```text
+42 passed
+```
+
+The suite covers key parts of the evidence and retrieval pipeline, including structural filtering, topical validation, provenance handling, citation validation, and NLI-based evidence admission.
+
+---
+
+## Example Queries
+
+```text
+en güncel cvmi getir
+```
+
+```text
+rag hakkında yazdığım belge
+```
+
+```text
+geçen hafta hocadan gelen network ödevi
+```
+
+```text
+Microsoft geçen son cvyi bul
+```
+
+```text
+Where is my most recent presentation about AI?
+```
+
+```text
+Find the document where I worked with AI agents and RAG systems professionally.
+```
+
+---
+
+## Design Principles
+
+### Local First
+
+Personal documents should remain under the user's control.
+
+### Retrieval Before Generation
+
+Finding the correct evidence is more important than generating a fluent but unsupported answer.
+
+### Evidence Over Guessing
+
+When valid evidence cannot be found, Recall should abstain rather than fabricate a result.
+
+### Hybrid Search Over Single-Method Search
+
+Filename matching, lexical retrieval, metadata, and semantics solve different parts of the file-discovery problem.
+
+### Explainable Results
+
+A useful search system should be able to show where a result came from and why it was considered relevant.
+
+---
+
+## Current Status
+
+Recall is under active development.
+
+The current version includes:
+
+* computer-wide local file indexing
+* incremental metadata-aware indexing
+* SQLite FTS5 search
+* multilingual natural-language query planning
+* typo-tolerant filename matching
+* hybrid retrieval
+* lazy semantic reranking
+* evidence extraction
+* structural and topical evidence gates
+* local NLI validation
+* provenance-aware grounding
+* Streamlit file-discovery interface
+* local file and folder opening
+* regression testing
+
+Planned improvements include further indexing optimization, broader parser coverage, retrieval evaluation, UI refinement, and packaging the application for easier installation.
+
+---
+
+## Motivation
+
+Modern computers can contain thousands of documents spread across Downloads, Desktop, Documents, cloud-synced folders, university materials, work files, and personal archives.
+
+The information is there.
+
+The difficult part is remembering **where**.
+
+Recall explores a different interaction model:
+
+> Instead of navigating folders, describe what you remember.
+
+---
+
+## Author
+
+**Esin Begüm Kaya**
+
+Computer Engineering · AI · Data · Software Engineering
+
+---
+
+## Disclaimer
+
+Recall is an independent local file-search and retrieval project. It is not affiliated with other projects or products that use the names “Recall” or “MemoRAG”.
