@@ -1,4 +1,4 @@
-from typing import List, Dict
+﻿from typing import List, Dict
 import re
 
 
@@ -60,7 +60,7 @@ INCLUDE:
 - a program explicitly covering AI agents and RAG
 - "HCCDA-AI"
 - a course explicitly teaching Machine Learning
-- a program explicitly named "Yapay Zeka Programı"
+- a program explicitly named "Yapay Zeka ProgramÄ±"
 
 EXCLUDE:
 - a generic data visualization course
@@ -888,10 +888,22 @@ VALIDATED EVIDENCE
 
 {context}
 
-
 TASK
 
 Answer the question using only the validated evidence above.
+
+Write atomic factual claims.
+
+Each citation must support every factual detail in the claim immediately
+associated with it.
+
+If different sources support different details, split those details into
+separate sentences or clauses and cite each one separately.
+
+Do not place multiple citations after a combined claim unless every cited
+source independently supports the entire claim.
+
+Preserve the terminology used in the evidence whenever possible.
 
 Parent context identifies where or under which role the evidence belongs.
 Use it when needed to answer questions such as where the work was performed.
@@ -957,6 +969,30 @@ def generate_validated_subanswer(
         subquery,
         evidence_units,
     )
+
+    if len(evidence_units) == 1:
+        user_prompt += """
+
+SINGLE-SOURCE PRECISION RULES
+
+You are answering from exactly one validated evidence unit.
+
+Do not restate the full wording of the question as a factual claim.
+
+Include only facts explicitly stated in this evidence unit or its Parent context.
+
+If the question asks about multiple concepts but this evidence supports only
+one of them, answer only the supported concept.
+
+Use wording as close as possible to the Evidence text.
+
+Do not introduce broader synonyms or qualifiers such as "professionally"
+unless they are explicitly supported by the evidence.
+
+The Parent context may identify where the evidence belongs.
+
+Cite only this source.
+"""
 
     chat_client.settings.temperature = 0.0
     chat_client.settings.max_tokens = 180
@@ -1126,6 +1162,65 @@ def generate_grounded_answer_from_evidence(
 
         return combined_answer
 
+    # Single subquery with multiple evidence units:
+    # generate and validate one atomic answer per source.
+    if (
+        len(subqueries) == 1
+        and len(numbered_evidence) > 1
+    ):
+        atomic_answers = []
+
+        subquery = subqueries[0]
+
+        for unit in numbered_evidence:
+            atomic_answer = (
+                generate_validated_subanswer(
+                    chat_client,
+                    subquery,
+                    [unit],
+                    claim_judge=claim_judge,
+                )
+            )
+
+            if (
+                atomic_answer
+                != ABSTENTION_MESSAGE
+            ):
+                atomic_answers.append(
+                    atomic_answer
+                )
+
+        if not atomic_answers:
+            return ABSTENTION_MESSAGE
+
+        combined_answer = "\n".join(
+            atomic_answers
+        )
+
+        print(
+            "\nGenerated atomic candidate answer:"
+        )
+        print(
+            combined_answer
+        )
+
+        validation_result = (
+            validate_generated_answer(
+                combined_answer,
+                numbered_evidence,
+                claim_judge=claim_judge,
+            )
+        )
+
+        print(
+            f"\nCitation/claim validation: "
+            f"{'PASS' if validation_result else 'FAIL'}"
+        )
+
+        if not validation_result:
+            return ABSTENTION_MESSAGE
+
+        return combined_answer
     evidence_units = numbered_evidence
 
     user_prompt = build_evidence_user_prompt(
@@ -1194,4 +1289,5 @@ def generate_grounded_answer_from_evidence(
         return ABSTENTION_MESSAGE
 
     return content
+
 

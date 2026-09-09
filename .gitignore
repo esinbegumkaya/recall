@@ -36,3 +36,27 @@ Thumbs.db
 
 # Personal documents
 data/samples/*.pdf
+# Recall development artifacts
+engine_inputs.txt
+nli_bug_review.txt
+project_tree.txt
+recall_review.txt
+recall_core.zip
+
+# Local debug utilities
+scripts/debug_provenance.py
+scripts/search_fts.py
+scripts/test_parent_context.py
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Environment
+.venv/
+
+# Local indexes / databases
+*.db
+*.sqlite
+*.sqlite3

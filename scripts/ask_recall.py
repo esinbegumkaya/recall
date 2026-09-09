@@ -1,4 +1,4 @@
-import re
+﻿import re
 from pathlib import Path
 import sys
 
@@ -65,81 +65,6 @@ NLI_THRESHOLD = 0.15
 
 SECTION_BOOST = 0.075
 HEADING_PENALTY = 0.05
-
-
-def build_nli_hypothesis(query):
-    normalized = query.strip()
-
-    replacements = [
-        (
-            "Did this person build ",
-            "This person built ",
-        ),
-        (
-            "Did this person work with ",
-            "This person worked with ",
-        ),
-        (
-            "Did this person work ",
-            "This person worked ",
-        ),
-        (
-            "Did this person use ",
-            "This person used ",
-        ),
-        (
-            "Did this person develop ",
-            "This person developed ",
-        ),
-        (
-            "Did this person create ",
-            "This person created ",
-        ),
-        (
-            "Did this person have ",
-            "This person had ",
-        ),
-        (
-            "Does this person know ",
-            "This person knows ",
-        ),
-        (
-            "Where did this person work with ",
-            "This person worked with ",
-        ),
-        (
-            "Where did this person use ",
-            "This person used ",
-        ),
-        (
-            "Where did this person build ",
-            "This person built ",
-        ),
-        (
-            "Where did this person develop ",
-            "This person developed ",
-        ),
-    ]
-
-    for prefix, replacement in replacements:
-        if normalized.lower().startswith(
-            prefix.lower()
-        ):
-            hypothesis = (
-                replacement
-                + normalized[len(prefix):]
-            )
-
-            if hypothesis.endswith("?"):
-                hypothesis = hypothesis[:-1]
-
-            return hypothesis.strip() + "."
-
-    if normalized.endswith("?"):
-        normalized = normalized[:-1]
-
-    return normalized.strip() + "."
-
 
 
 def split_compound_query(query):
@@ -483,7 +408,7 @@ def main():
             )
         )
 
-        hypothesis = build_nli_hypothesis(
+        hypothesis = judge.build_hypothesis(
             subquery
         )
 

@@ -1,343 +1,276 @@
-import json
-import math
+from collections import defaultdict
 import re
 
-from rank_bm25 import BM25Okapi
+from recall.database import (
+    search_chunks_fts,
+)
 
 
-SEMANTIC_WEIGHT = 0.70
-BM25_WEIGHT = 0.30
+DEFAULT_CANDIDATE_LIMIT = 50
+DEFAULT_RESULT_LIMIT = 10
+
+MIN_EVIDENCE_CHARACTERS = 40
+MIN_EVIDENCE_WORDS = 5
+
+MAX_CHUNKS_PER_FILE = 3
 
 
-STOP_WORDS = {
-    "a",
-    "an",
-    "the",
-    "is",
-    "are",
-    "was",
-    "were",
-    "be",
-    "been",
-    "being",
-    "what",
-    "which",
-    "who",
-    "whom",
-    "whose",
-    "does",
-    "do",
-    "did",
-    "this",
-    "that",
-    "these",
-    "those",
-    "person",
-    "have",
-    "has",
-    "had",
-    "with",
-    "and",
-    "or",
-    "of",
-    "to",
-    "in",
-    "on",
-    "for",
-}
-
-
-def cosine_similarity(a, b):
-    dot_product = sum(
-        x * y
-        for x, y in zip(a, b)
-    )
-
-    magnitude_a = math.sqrt(
-        sum(x * x for x in a)
-    )
-
-    magnitude_b = math.sqrt(
-        sum(y * y for y in b)
-    )
-
-    if magnitude_a == 0 or magnitude_b == 0:
-        return 0.0
-
-    return dot_product / (
-        magnitude_a * magnitude_b
+def normalize_text(text: str) -> str:
+    return " ".join(
+        (text or "").split()
     )
 
 
-def tokenize(text):
-    tokens = re.findall(
-        r"\b\w+\b",
-        text.lower(),
+def meaningful_word_count(
+    text: str,
+) -> int:
+    return len(
+        re.findall(
+            r"\b[\wÀ-ÖØ-öø-ÿĞğİıŞşÇçÖöÜü]+\b",
+            text,
+            flags=re.UNICODE,
+        )
     )
 
+
+def is_low_quality_chunk(
+    text: str,
+) -> bool:
+    """
+    Reject fragments that are too small to function as
+    useful evidence.
+
+    Examples:
+        "65"
+        "Hours Limit"
+        "Macro F1= 1"
+    """
+
+    normalized = normalize_text(
+        text
+    )
+
+    if len(
+        normalized
+    ) < MIN_EVIDENCE_CHARACTERS:
+        return True
+
+    if (
+        meaningful_word_count(
+            normalized
+        )
+        < MIN_EVIDENCE_WORDS
+    ):
+        return True
+
+    return False
+
+
+def canonicalize_for_duplicate_check(
+    text: str,
+) -> str:
+    text = normalize_text(
+        text
+    ).casefold()
+
+    text = re.sub(
+        r"\W+",
+        " ",
+        text,
+        flags=re.UNICODE,
+    )
+
+    return " ".join(
+        text.split()
+    )
+
+
+def lexical_candidates(
+    query: str,
+    candidate_limit: int = (
+        DEFAULT_CANDIDATE_LIMIT
+    ),
+):
+    """
+    Broad FTS candidate generation.
+
+    FTS is intentionally allowed to retrieve more results
+    than we eventually expose.
+    """
+
+    rows = search_chunks_fts(
+        query,
+        limit=candidate_limit,
+    )
+
+    candidates = []
+
+    for row in rows:
+        candidates.append(
+            {
+                "file_path": (
+                    row["file_path"]
+                ),
+                "file_name": (
+                    row["file_name"]
+                ),
+                "chunk_index": (
+                    row["chunk_index"]
+                ),
+                "text": (
+                    row["chunk_text"]
+                ),
+                "page_number": (
+                    row["page_number"]
+                ),
+                "section_name": (
+                    row["section_name"]
+                ),
+                "lexical_score": (
+                    row["lexical_score"]
+                ),
+                "retrieval_method": (
+                    "FTS5"
+                ),
+            }
+        )
+
+    return candidates
+
+
+def filter_candidate_quality(
+    candidates: list,
+):
     return [
-        token
-        for token in tokens
-        if token not in STOP_WORDS
-        and len(token) > 1
+        candidate
+        for candidate in candidates
+        if not is_low_quality_chunk(
+            candidate["text"]
+        )
     ]
 
 
-def normalize_scores(scores):
-    if not scores:
-        return []
+def remove_exact_duplicates(
+    candidates: list,
+):
+    """
+    Remove identical text duplicated across copied files or
+    repeated chunks while preserving the best-ranked copy.
+    """
 
-    minimum = min(scores)
-    maximum = max(scores)
+    seen = set()
+    result = []
 
-    if maximum == minimum:
-        return [
-            0.0
-            for _ in scores
+    for candidate in candidates:
+        key = (
+            canonicalize_for_duplicate_check(
+                candidate["text"]
+            )
+        )
+
+        if not key:
+            continue
+
+        if key in seen:
+            continue
+
+        seen.add(
+            key
+        )
+
+        result.append(
+            candidate
+        )
+
+    return result
+
+
+def diversify_by_file(
+    candidates: list,
+    max_chunks_per_file: int = (
+        MAX_CHUNKS_PER_FILE
+    ),
+):
+    """
+    Prevent one highly repetitive file from monopolizing the
+    candidate set.
+    """
+
+    file_counts = defaultdict(
+        int
+    )
+
+    diversified = []
+
+    for candidate in candidates:
+        file_path = candidate[
+            "file_path"
         ]
 
-    return [
-        (score - minimum)
-        / (maximum - minimum)
-        for score in scores
-    ]
-
-
-def dense_retrieve(
-    query_embedding,
-    rows,
-    top_k=10,
-):
-    rows = list(rows)
-
-    if not rows:
-        return []
-
-    results = []
-
-    for row in rows:
-        embedding = json.loads(
-            row["embedding"]
-        )
-
-        semantic_score = cosine_similarity(
-            query_embedding,
-            embedding,
-        )
-
-        results.append(
-            {
-                "file_path": row["file_path"],
-                "chunk_index": row["chunk_index"],
-                "chunk_text": row["chunk_text"],
-                "page_number": row["page_number"],
-                "section_name": row["section_name"],
-                "semantic_score": semantic_score,
-            }
-        )
-
-    results.sort(
-        key=lambda result: result[
-            "semantic_score"
-        ],
-        reverse=True,
-    )
-
-    return results[:top_k]
-
-
-def hybrid_retrieve(
-    query,
-    query_embedding,
-    rows,
-    top_k=10,
-):
-    rows = list(rows)
-
-    if not rows:
-        return []
-
-    semantic_scores = []
-
-    for row in rows:
-        embedding = json.loads(
-            row["embedding"]
-        )
-
-        semantic_scores.append(
-            cosine_similarity(
-                query_embedding,
-                embedding,
-            )
-        )
-
-    corpus = [
-        tokenize(
-            row["chunk_text"]
-        )
-        for row in rows
-    ]
-
-    bm25 = BM25Okapi(
-        corpus
-    )
-
-    bm25_scores = list(
-        bm25.get_scores(
-            tokenize(query)
-        )
-    )
-
-    normalized_semantic = normalize_scores(
-        semantic_scores
-    )
-
-    normalized_bm25 = normalize_scores(
-        bm25_scores
-    )
-
-    results = []
-
-    for index, row in enumerate(rows):
-        hybrid_score = (
-            SEMANTIC_WEIGHT
-            * normalized_semantic[index]
-            + BM25_WEIGHT
-            * normalized_bm25[index]
-        )
-
-        results.append(
-            {
-                "file_path": row["file_path"],
-                "chunk_index": row["chunk_index"],
-                "chunk_text": row["chunk_text"],
-                "page_number": row["page_number"],
-                "section_name": row["section_name"],
-                "semantic_score": semantic_scores[index],
-                "bm25_score": bm25_scores[index],
-                "hybrid_score": hybrid_score,
-            }
-        )
-
-    results.sort(
-        key=lambda result: result[
-            "hybrid_score"
-        ],
-        reverse=True,
-    )
-
-    return results[:top_k]
-
-
-def section_aware_dense_retrieve(
-    query,
-    query_embedding,
-    rows,
-    detect_section_intent,
-    detect_query_mode,
-    top_k=10,
-    section_boost=0.075,
-    heading_penalty=0.05,
-):
-    rows = list(rows)
-
-    if not rows:
-        return []
-
-    dense_results = dense_retrieve(
-        query_embedding=query_embedding,
-        rows=rows,
-        top_k=len(rows),
-    )
-
-    intended_section = (
-        detect_section_intent(
-            query
-        )
-    )
-
-    query_mode = (
-        detect_query_mode(
-            query
-        )
-    )
-
-    results = []
-
-    for result in dense_results:
-        updated_result = dict(
-            result
-        )
-
-        section_match = (
-            intended_section is not None
-            and result.get(
-                "section_name"
-            ) == intended_section
-        )
-
-        chunk_text = (
-            result["chunk_text"]
-            .strip()
-        )
-
-        heading_only = (
-            chunk_text.startswith("#")
-            and "\n" not in chunk_text
-        )
-
-        low_information_penalty = (
-            heading_penalty
-            if (
-                query_mode == "CONTENT_SEARCH"
-                and heading_only
-            )
-            else 0.0
-        )
-
-        updated_result[
-            "section_match"
-        ] = section_match
-
-        updated_result[
-            "intended_section"
-        ] = intended_section
-
-        updated_result[
-            "query_mode"
-        ] = query_mode
-
-        updated_result[
-            "heading_only"
-        ] = heading_only
-
-        updated_result[
-            "heading_penalty"
-        ] = low_information_penalty
-
-        updated_result[
-            "final_score"
-        ] = (
-            result[
-                "semantic_score"
+        if (
+            file_counts[
+                file_path
             ]
-            + (
-                section_boost
-                if section_match
-                else 0.0
-            )
-            - low_information_penalty
+            >= max_chunks_per_file
+        ):
+            continue
+
+        diversified.append(
+            candidate
         )
 
-        results.append(
-            updated_result
-        )
+        file_counts[
+            file_path
+        ] += 1
 
-    results.sort(
-        key=lambda result: result[
-            "final_score"
-        ],
-        reverse=True,
+    return diversified
+
+
+def retrieve_candidates(
+    query: str,
+    candidate_limit: int = (
+        DEFAULT_CANDIDATE_LIMIT
+    ),
+    result_limit: int = (
+        DEFAULT_RESULT_LIMIT
+    ),
+):
+    """
+    Recall v1 lexical candidate retrieval.
+
+    Pipeline:
+        FTS5
+        -> minimum evidence quality
+        -> exact duplicate removal
+        -> per-file diversity
+        -> final candidate set
+    """
+
+    candidates = lexical_candidates(
+        query,
+        candidate_limit=(
+            candidate_limit
+        ),
     )
 
-    return results[:top_k]
+    candidates = (
+        filter_candidate_quality(
+            candidates
+        )
+    )
+
+    candidates = (
+        remove_exact_duplicates(
+            candidates
+        )
+    )
+
+    candidates = (
+        diversify_by_file(
+            candidates
+        )
+    )
+
+    return candidates[
+        :result_limit
+    ]
