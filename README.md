@@ -1,6 +1,33 @@
 <div align="center">
 
 # Recall
+
+### Offline Local RAG Assistant powered by Microsoft Foundry Local
+
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![Foundry Local](https://img.shields.io/badge/Microsoft-Foundry%20Local-0078D4?logo=microsoft&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.63-FF4B4B?logo=streamlit&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.14-EE4C2C?logo=pytorch&logoColor=white)
+![Transformers](https://img.shields.io/badge/Transformers-HuggingFace-FFD21E?logo=huggingface&logoColor=black)
+
+![License](https://img.shields.io/github/license/esinbegumkaya/recall)
+![Release](https://img.shields.io/github/v/release/esinbegumkaya/recall)
+![Last Commit](https://img.shields.io/github/last-commit/esinbegumkaya/recall)
+![Repo Size](https://img.shields.io/github/repo-size/esinbegumkaya/recall)
+
+![Tests](https://img.shields.io/badge/Tests-42%2F42%20Passing-brightgreen)
+![Compile](https://img.shields.io/badge/compileall-Passing-success)
+![Status](https://img.shields.io/badge/Status-v1.0.0-success)
+![Offline](https://img.shields.io/badge/Offline-Yes-success)
+![RAG](https://img.shields.io/badge/RAG-Hybrid-blueviolet)
+
+</div>
+
+
+<div align="center">
+
+# Recall
 ### Offline Local RAG Assistant powered by Microsoft Foundry Local
 
 A local-first Retrieval-Augmented Generation (RAG) assistant for indexing, searching, validating, and answering questions from documents on a user's computer.
