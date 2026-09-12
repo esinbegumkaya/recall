@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+message: "If you use Recall in your work, please cite it using the metadata below."
+
+title: "Recall"
+
+type: software
+
+authors:
+  - family-names: "Kaya"
+    given-names: "Esin Begüm"
+
+repository-code: "https://github.com/esinbegumkaya/recall"
+
+url: "https://github.com/esinbegumkaya/recall"
+
+license: "MIT"
+
+version: "1.0.0"
+
+date-released: "2026-09-12"
+
+abstract: >
+  Recall is an offline Retrieval-Augmented Generation (RAG) assistant powered by
+  Microsoft Foundry Local. It provides hybrid retrieval, evidence validation,
+  citation-aware answer generation, incremental indexing, and local document
+  search through a Streamlit interface.
+
+keywords:
+  - RAG
+  - Retrieval-Augmented Generation
+  - Local AI
+  - Microsoft Foundry Local
+  - Hybrid Retrieval
+  - Semantic Search
+  - Information Retrieval
+  - Streamlit
+  - Python
+  - LLM
+
+language: en
+
+repository-artifact: "https://github.com/esinbegumkaya/recall/releases/tag/v1.0.0"
