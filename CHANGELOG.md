@@ -1,5 +1,8 @@
 # Changelog
 
+![Version](https://img.shields.io/badge/version-v1.0.0-success)
+![Status](https://img.shields.io/badge/status-stable-success)
+
 All notable changes to this project are documented in this file.
 
 The format is inspired by **Keep a Changelog**, and this project follows **Semantic Versioning** where applicable.
