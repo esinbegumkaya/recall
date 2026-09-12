@@ -12,7 +12,6 @@
 ![Transformers](https://img.shields.io/badge/Transformers-HuggingFace-FFD21E?logo=huggingface&logoColor=black)
 
 ![License](https://img.shields.io/github/license/esinbegumkaya/recall.)
-
 ![Release](https://img.shields.io/github/v/release/esinbegumkaya/recall)
 ![Last Commit](https://img.shields.io/github/last-commit/esinbegumkaya/recall)
 ![Repo Size](https://img.shields.io/github/repo-size/esinbegumkaya/recall)
