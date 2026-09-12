@@ -21,7 +21,7 @@
 ![Status](https://img.shields.io/badge/Status-v1.0.0-success)
 ![Offline](https://img.shields.io/badge/Offline-Yes-success)
 ![RAG](https://img.shields.io/badge/RAG-Hybrid-blueviolet)
-
+[![CI](https://github.com/esinbegumkaya/recall/actions/workflows/ci.yml/badge.svg)](https://github.com/esinbegumkaya/recall/actions/workflows/ci.yml)
 </div>
 
 
