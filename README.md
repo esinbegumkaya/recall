@@ -22,13 +22,6 @@
 ![Offline](https://img.shields.io/badge/Offline-Yes-success)
 ![RAG](https://img.shields.io/badge/RAG-Hybrid-blueviolet)
 
-![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)
-![Language](https://img.shields.io/badge/Language-English-blue)
-![UI](https://img.shields.io/badge/UI-Streamlit-red)
-![Database](https://img.shields.io/badge/Database-SQLite-07405E?logo=sqlite)
-![Embedding](https://img.shields.io/badge/Embedding-Local-success)
-![Inference](https://img.shields.io/badge/Inference-Local-success)
-
 </div>
 
 
