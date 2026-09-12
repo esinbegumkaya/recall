@@ -1,73 +1,3 @@
-"""
-firebase_auth.py
-=================
-
-Firebase Authentication integration for Streamlit, via a popup window.
-
-Why a popup instead of an embedded iframe
-------------------------------------------
-Streamlit's `st.components.v1.html` renders content in an iframe using
-`srcdoc`, which browsers treat as having protocol "about:" rather than
-"http:"/"https:". Firebase Auth explicitly rejects that environment with:
-
-    auth/operation-not-supported-in-this-environment
-    "location.protocol" must be http, https or chrome-extension and
-    web storage must be enabled.
-
-To work around this, the actual Firebase sign-in form runs on a tiny local
-HTTP server (bound to 127.0.0.1) and opens in a real popup window — a
-genuine top-level browsing context with a proper http: origin, where
-Firebase Auth is fully supported. When sign-in succeeds, the popup posts
-the result back to the Streamlit tab via `window.postMessage` and closes
-itself; the Streamlit tab then redirects itself with the ID token attached
-as a query parameter, exactly as before.
-
-Getting the result back to the Streamlit tab
-----------------------------------------------
-This is the fiddly part, because two different browser restrictions stack:
-
-1. The popup's real `window.opener` is Streamlit's `components.html`
-   iframe (that's what called `window.open()`), NOT the browser tab
-   itself. Browsers only let a window navigate a frame it is directly the
-   opener/parent of, or is same-origin with — so the popup trying to reach
-   "the tab" via `window.opener.top` is refused outright:
-   "Unsafe attempt to initiate navigation ... neither same-origin ... nor
-   is it the target's parent or opener." No JS trick gets around this from
-   the popup's side; it can only safely postMessage its direct opener (the
-   iframe) and close itself.
-
-2. That iframe is sandboxed without "allow-top-navigation", so
-   `window.top.location = ...` from inside it also always throws — sandbox
-   restrictions apply regardless of user activation, click-triggered or
-   not.
-
-Both restrictions are specifically about *navigation*, though — not about
-ordinary same-origin scripting. `window.top` itself is directly, same-
-origin accessible from inside the iframe (no cross-origin error reading or
-touching it — only setting its `.location` is specially blocked by the
-sandbox). So instead of navigating anything, the iframe injects a real
-`<script>` element directly into `window.top.document`, via
-`createElement` + `appendChild` (elements added this way DO execute,
-unlike HTML inserted through `innerHTML`). That injected script then runs
-in the *top page's own* context, completely unsandboxed, so its own
-`window.location` assignment is just an ordinary same-window navigation —
-no restriction applies to it at all.
-
-Security note
--------------
-`decode_id_token()` only decodes the JWT payload — it does NOT verify the
-cryptographic signature. Fine for a local/prototype tool where the token
-never leaves your own machine's browser. For a public deployment, verify
-server-side instead with the `firebase-admin` SDK:
-
-    import firebase_admin
-    from firebase_admin import auth as fb_admin_auth, credentials
-
-    cred = credentials.Certificate("service-account.json")
-    firebase_admin.initialize_app(cred)
-    decoded = fb_admin_auth.verify_id_token(id_token)
-"""
-
 from __future__ import annotations
 
 import base64
@@ -82,7 +12,6 @@ import streamlit.components.v1 as components
 
 
 def get_firebase_config() -> Optional[Dict[str, str]]:
-    """Read the Firebase web config from .streamlit/secrets.toml."""
     try:
         config = st.secrets.get("firebase")
     except Exception:
@@ -99,7 +28,6 @@ def get_firebase_config() -> Optional[Dict[str, str]]:
 
 
 def decode_id_token(token: str) -> Dict[str, Any]:
-    """Decode (without verifying) the payload of a Firebase ID token."""
     try:
         payload_segment = token.split(".")[1]
         padded = payload_segment + "=" * (-len(payload_segment) % 4)
@@ -110,7 +38,6 @@ def decode_id_token(token: str) -> Dict[str, Any]:
 
 
 def consume_auth_redirect() -> Optional[Dict[str, Any]]:
-    """Check the URL query params for a Firebase redirect and consume it."""
     params = st.query_params
 
     token = params.get("fb_token")
@@ -132,16 +59,11 @@ def consume_auth_redirect() -> Optional[Dict[str, Any]]:
     return profile
 
 
-# =========================================================
-# Standalone popup page (served over real http:// so Firebase Auth is
-# fully supported) — built once, then served by a tiny local HTTP server.
-# =========================================================
-
 _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Recall — Giriş</title>
+<title>Recall — Sign In</title>
 <style>
   :root {
     --fb-bg: #F8FAFF; --fb-text: #17203A; --fb-muted: #565D80;
@@ -214,21 +136,21 @@ _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-  <h1>Recall'a giriş yap</h1>
-  <p class="sub">Kimlik doğrulama Firebase tarafından yapılır.</p>
+  <h1>Sign in to Recall</h1>
+  <p class="sub">Authentication is handled by Firebase.</p>
 
   <div id="status"></div>
 
   <input id="email" type="email" placeholder="name@example.com" autocomplete="email" />
-  <input id="password" type="password" placeholder="Şifre" autocomplete="current-password" />
-  <a class="forgot" onclick="forgotPassword()">Şifremi unuttum</a>
+  <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+  <a class="forgot" onclick="forgotPassword()">Forgot password</a>
 
   <div style="display:flex; gap:0.5rem; margin-bottom: 0.6rem;">
-    <button class="btn-primary" id="signin-btn" style="margin-bottom:0; width:auto; flex:1;" onclick="submitForm('signin')">Giriş yap</button>
-    <button class="btn-secondary" id="signup-btn" onclick="submitForm('signup')">Hesap oluştur</button>
+    <button class="btn-primary" id="signin-btn" style="margin-bottom:0; width:auto; flex:1;" onclick="submitForm('signin')">Sign in</button>
+    <button class="btn-secondary" id="signup-btn" onclick="submitForm('signup')">Create account</button>
   </div>
 
-  <div class="divider">veya</div>
+  <div class="divider">or</div>
 
   <button class="btn-google" onclick="googleSignIn()">
     <svg width="16" height="16" viewBox="0 0 48 48">
@@ -237,7 +159,7 @@ _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
       <path fill="#4CAF50" d="M24 44c5.4 0 10.3-1.8 14-4.9l-6.5-5.5c-2 1.4-4.6 2.3-7.5 2.3-5.3 0-9.7-3.4-11.3-8.1l-6.6 5.1C9.8 39.6 16.3 44 24 44z"/>
       <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4 5.7l6.5 5.5C40.8 36.7 44 31 44 24c0-1.3-.1-2.3-.4-3.5z"/>
     </svg>
-    Google ile devam et
+    Continue with Google
   </button>
 
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
@@ -265,21 +187,19 @@ _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
 
     function friendlyError(err) {
       const map = {
-        "auth/invalid-email": "Geçersiz e-posta adresi.",
-        "auth/user-not-found": "Bu e-posta ile kayıtlı bir hesap yok. Önce 'Hesap oluştur'a bas.",
-        "auth/wrong-password": "Şifre hatalı.",
-        "auth/invalid-credential": "E-posta veya şifre hatalı.",
-        "auth/email-already-in-use": "Bu e-posta zaten kayıtlı. 'Giriş yap'ı kullan.",
-        "auth/weak-password": "Şifre en az 6 karakter olmalı.",
-        "auth/popup-closed-by-user": "Pencere kapatıldı.",
-        "auth/popup-blocked": "Tarayıcı pop-up'ı engelledi. Pop-up izni verip tekrar deneyin.",
-        "auth/unauthorized-domain": "Bu adres Firebase'de yetkili domain olarak tanımlı değil."
+        "auth/invalid-email": "Invalid email address.",
+        "auth/user-not-found": "No account found with this email. Try 'Create account' first.",
+        "auth/wrong-password": "Incorrect password.",
+        "auth/invalid-credential": "Incorrect email or password.",
+        "auth/email-already-in-use": "This email is already registered. Use 'Sign in' instead.",
+        "auth/weak-password": "Password must be at least 6 characters.",
+        "auth/popup-closed-by-user": "Window was closed.",
+        "auth/popup-blocked": "The browser blocked the pop-up. Please allow pop-ups and try again.",
+        "auth/unauthorized-domain": "This domain is not authorized in Firebase."
       };
-      return map[err.code] || "Bir hata oluştu (" + (err.code || "bilinmeyen hata") + ").";
+      return map[err.code] || "An error occurred (" + (err.code || "unknown error") + ").";
     }
 
-    // Removes any leftover "Devam et" link from a previous attempt before
-    // rendering a new status, so retries don't stack duplicate links.
     function clearContinueLink() {
       const old = document.getElementById("continue-link");
       if (old) old.remove();
@@ -289,20 +209,6 @@ _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
       user.getIdToken().then(function (token) {
         clearContinueLink();
 
-        // We deliberately do NOT try to navigate window.opener.top (or
-        // opener itself) from here. Browsers only let a window navigate a
-        // frame it is directly the opener/parent of, or is same-origin
-        // with. This popup's real "opener" is the Streamlit tab's sandboxed
-        // component iframe — NOT the tab itself — so any attempt to reach
-        // "the tab" (window.opener.top) is refused outright with:
-        //   "Unsafe attempt to initiate navigation ... neither same-origin
-        //   ... nor is it the target's parent or opener."
-        // That's a hard browser security rule; no JS trick gets around it
-        // from this side. Instead we just hand the token to our direct
-        // opener via postMessage and let IT figure out how to get the
-        // Streamlit tab to the right URL (see render_firebase_login's
-        // message listener, which relays this to a bridge function running
-        // in the tab's own unsandboxed top-level page).
         if (window.opener) {
           window.opener.postMessage({
             type: "firebase-auth-result",
@@ -312,12 +218,10 @@ _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
             name: user.displayName || "",
             provider: provider
           }, "*");
-          setStatus("Giriş başarılı, pencere kapatılıyor…", true);
+          setStatus("Sign in successful, closing window…", true);
           setTimeout(function () { window.close(); }, 400);
         } else {
-          // No opener at all (popup launched some other way) — nothing to
-          // hand off to. Last resort: let the person copy the token by hand.
-          setStatus("Giriş başarılı! Ana sekmeye dönüp sayfayı yenileyin.", true);
+          setStatus("Sign in successful! Return to the main tab and refresh the page.", true);
         }
       });
     }
@@ -335,11 +239,11 @@ _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
       const email = document.getElementById("email").value.trim();
       const password = document.getElementById("password").value;
       if (!email || !password) {
-        setStatus("E-posta ve şifre gerekli.");
+        setStatus("Email and password are required.");
         return;
       }
       setBusy(true);
-      setStatus(requestedMode === "signin" ? "Giriş yapılıyor…" : "Hesap oluşturuluyor…", true);
+      setStatus(requestedMode === "signin" ? "Signing in…" : "Creating account…", true);
       const action = requestedMode === "signin"
         ? auth.signInWithEmailAndPassword(email, password)
         : auth.createUserWithEmailAndPassword(email, password);
@@ -351,7 +255,7 @@ _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
     function googleSignIn() {
       const provider = new firebase.auth.GoogleAuthProvider();
       setBusy(true);
-      setStatus("Google penceresi açılıyor…", true);
+      setStatus("Opening Google window…", true);
       auth.signInWithPopup(provider)
         .then(function (cred) { afterAuth(cred.user, "google"); })
         .catch(function (err) { reportFailure(friendlyError(err)); });
@@ -360,11 +264,11 @@ _AUTH_PAGE_TEMPLATE = """<!DOCTYPE html>
     function forgotPassword() {
       const email = document.getElementById("email").value.trim();
       if (!email) {
-        setStatus("Önce e-posta adresini yaz, sonra tıkla.");
+        setStatus("Enter your email first, then click.");
         return;
       }
       auth.sendPasswordResetEmail(email)
-        .then(function () { setStatus("Şifre sıfırlama e-postası gönderildi.", true); })
+        .then(function () { setStatus("Password reset email sent.", true); })
         .catch(function (err) { setStatus(friendlyError(err)); });
     }
 
@@ -381,7 +285,7 @@ _server_state: Dict[str, Any] = {}
 
 
 class _AuthPageHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802 (stdlib method name)
+    def do_GET(self) -> None:
         body = _server_state.get("html", "").encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -389,16 +293,12 @@ class _AuthPageHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
-        pass  # keep Streamlit's terminal output clean
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
 
 
 @st.cache_resource(show_spinner=False)
 def _start_auth_server(config_json: str) -> int:
-    """Start (once per process) a local HTTP server serving the auth popup.
-
-    Bound to 127.0.0.1 only — never reachable from outside this machine.
-    """
     html = _AUTH_PAGE_TEMPLATE.replace("__FIREBASE_CONFIG__", config_json)
     _server_state["html"] = html
 
@@ -417,18 +317,7 @@ def render_firebase_login(
     height: int = 90,
     theme_mode: str = "light",
 ) -> None:
-    """Render a "Sign in" launcher that opens Firebase Auth in a popup.
-
-    The popup runs on a local http:// server (see module docstring for why
-    that's necessary), and reports back to this page via postMessage, which
-    is relayed to the browser tab by injecting a real <script> element
-    directly into the top document (see the message listener below for why).
-    """
     port = _start_auth_server(json.dumps(config))
-    # "localhost" (not "127.0.0.1") because Firebase's default Authorized
-    # domains list includes "localhost" out of the box — using the raw IP
-    # address here is exactly what was causing Google sign-in to fail with
-    # auth/unauthorized-domain.
     popup_url = f"http://localhost:{port}/?theme={theme_mode}"
 
     widget_html = f"""
@@ -450,7 +339,7 @@ def render_firebase_login(
         }}
         #fb-continue-link:hover {{ text-decoration: underline; }}
       </style>
-      <button id="fb-launch-btn" onclick="fbOpenPopup()">Giriş yap / Kayıt ol</button>
+      <button id="fb-launch-btn" onclick="fbOpenPopup()">Sign in / Sign up</button>
       <div id="fb-launch-status"></div>
     </div>
     <script>
@@ -465,7 +354,7 @@ def render_firebase_login(
         );
         if (!popup) {{
           document.getElementById("fb-launch-status").textContent =
-            "Tarayıcı pop-up'ı engelledi. Pop-up izni verip tekrar deneyin.";
+            "The browser blocked the pop-up. Please allow pop-ups and try again.";
         }}
       }}
 
@@ -478,12 +367,12 @@ def render_firebase_login(
         if (oldLink) oldLink.remove();
 
         if (!data.ok) {{
-          statusEl.textContent = data.error || "Giriş başarısız oldu.";
+          statusEl.textContent = data.error || "Sign in failed.";
           statusEl.className = "";
           return;
         }}
 
-        statusEl.textContent = "Giriş başarılı, yönlendiriliyor…";
+        statusEl.textContent = "Sign in successful, redirecting…";
         statusEl.className = "ok";
 
         const qs = new URLSearchParams();
@@ -494,22 +383,6 @@ def render_firebase_login(
         const search = qs.toString();
         const targetUrl = "?" + search;
 
-        // This iframe (Streamlit's components.html) is sandboxed WITHOUT
-        // "allow-top-navigation", so window.top.location = ... always
-        // throws here — confirmed, that's the exact error we hit before.
-        // BUT: window.top itself is directly, same-origin accessible (no
-        // cross-origin error when reading/calling into it) — the sandbox
-        // specifically blocks *navigation*, not ordinary same-origin DOM
-        // access. So instead of setting window.top.location ourselves
-        // (blocked) or calling a pre-defined function there (which turned
-        // out not to survive Streamlit's HTML sanitizer when injected via
-        // st.markdown), we inject a real <script> element directly into the
-        // top document via createElement + appendChild. Elements added this
-        // way DO execute (unlike innerHTML-inserted <script> tags), and the
-        // injected script runs in the top page's own, completely
-        // unsandboxed context — so its own window.location assignment is
-        // just an ordinary same-window navigation with no restriction at
-        // all.
         try {{
           const topDoc = window.top.document;
           const script = topDoc.createElement("script");
@@ -521,17 +394,12 @@ def render_firebase_login(
           console.error("Top-document script injection failed:", err);
         }}
 
-        // Fallback, only reached if the injection above is somehow blocked
-        // (e.g. allow-same-origin missing after all). A genuine click still
-        // carries its own fresh user activation, so a plain target="_top"
-        // link has a decent chance of working even where scripted attempts
-        // didn't.
-        statusEl.textContent = "Giriş başarılı!";
+        statusEl.textContent = "Sign in successful!";
         const link = document.createElement("a");
         link.id = "fb-continue-link";
         link.href = targetUrl;
         link.target = "_top";
-        link.textContent = "Devam etmek için tıkla →";
+        link.textContent = "Click to continue →";
         statusEl.insertAdjacentElement("afterend", link);
       }});
     </script>
