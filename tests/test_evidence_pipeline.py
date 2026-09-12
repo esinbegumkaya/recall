@@ -143,6 +143,18 @@ def test_normal_sentence_is_not_parent():
     assert "parent_text" not in result[1]
 
 def test_ai_agent_hypothesis():
+    """
+    NOTE: this used to assert an exact hardcoded string ("This item
+    involves AI agents."), produced by a fixed keyword-match table in
+    build_hypothesis() that only covered a handful of specific phrasings.
+    That table has been replaced with a general, query-driven hypothesis
+    builder (see nli_judge.extract_topic_from_query) so that arbitrary
+    topics -- not just the ones a developer happened to hardcode -- get a
+    real, content-bearing hypothesis instead of a vague fallback sentence.
+    This test now checks the property that actually matters (the query's
+    real topic words end up in the hypothesis) rather than pinning the
+    exact wording of one specific case.
+    """
     from recall.nli_judge import LocalNLIJudge
 
     judge = LocalNLIJudge.__new__(
@@ -154,9 +166,8 @@ def test_ai_agent_hypothesis():
         "AI agents and RAG systems professionally?"
     )
 
-    assert hypothesis == (
-        "This item involves AI agents."
-    )
+    assert "AI agents" in hypothesis
+    assert "RAG systems" in hypothesis
 
 def test_real_agentic_evidence_gets_high_entailment():
     from recall.nli_judge import LocalNLIJudge
@@ -173,10 +184,10 @@ def test_real_agentic_evidence_gets_high_entailment():
         ),
     )
 
-    assert result["hypothesis"] == (
-        "This item involves AI agents."
-    )
-
+    # See test_ai_agent_hypothesis above: hypothesis wording is no longer
+    # pinned to one hardcoded string. What matters for this test is the
+    # actual entailment outcome.
+    assert "AI agents" in result["hypothesis"]
     assert result["entailment_score"] >= 0.90
 def test_evidence_context_preserves_source_provenance():
     from recall.generator import build_evidence_context

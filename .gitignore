@@ -60,3 +60,11 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+
+# Streamlit / Firebase secrets
+.streamlit/secrets.toml
+
+# Local development / delivery artifacts
+Recall.zip
+check_settings.py
+src/recall/retrieval_backup.py

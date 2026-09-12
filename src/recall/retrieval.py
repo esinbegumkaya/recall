@@ -1,8 +1,15 @@
 from collections import defaultdict
+import json
+import math
 import re
 
 from recall.database import (
+    get_chunks_with_embeddings,
     search_chunks_fts,
+)
+
+from recall.semantic_reranker import (
+    LocalEmbeddingModel,
 )
 
 
@@ -14,8 +21,11 @@ MIN_EVIDENCE_WORDS = 5
 
 MAX_CHUNKS_PER_FILE = 3
 
+EMBEDDING_MODEL_NAME = "qwen3-embedding-0.6b"
+
 
 STOPWORDS = {
+    # English
     "a",
     "an",
     "and",
@@ -255,6 +265,7 @@ def lexical_candidates(
                 "snippet": (
                     row["snippet"]
                 ),
+                "semantic_score": 0.0,
                 "retrieval_method": (
                     "FTS5"
                 ),
@@ -262,6 +273,279 @@ def lexical_candidates(
         )
 
     return candidates
+
+
+# =========================================================
+# Dense semantic retrieval
+# =========================================================
+
+def cosine_similarity(
+    a: list[float],
+    b: list[float],
+) -> float:
+    if not a or not b:
+        return 0.0
+
+    if len(a) != len(b):
+        return 0.0
+
+    dot = sum(
+        x * y
+        for x, y in zip(a, b)
+    )
+
+    norm_a = math.sqrt(
+        sum(
+            x * x
+            for x in a
+        )
+    )
+
+    norm_b = math.sqrt(
+        sum(
+            y * y
+            for y in b
+        )
+    )
+
+    if (
+        norm_a == 0.0
+        or norm_b == 0.0
+    ):
+        return 0.0
+
+    return (
+        dot
+        / (
+            norm_a
+            * norm_b
+        )
+    )
+
+
+def normalize_similarity(
+    score: float,
+) -> float:
+    """
+    Convert cosine similarity from -1..1
+    into a stable 0..1 range.
+    """
+
+    return max(
+        0.0,
+        min(
+            1.0,
+            (
+                score + 1.0
+            ) / 2.0,
+        ),
+    )
+
+
+def dense_candidates(
+    query: str,
+    candidate_limit: int = (
+        DEFAULT_CANDIDATE_LIMIT
+    ),
+):
+    """
+    Global dense chunk retrieval.
+
+    Only embeddings already stored in SQLite are searched.
+    Missing embeddings are deliberately NOT generated here.
+    """
+
+    if not query.strip():
+        return []
+
+    embedding_model = (
+        LocalEmbeddingModel()
+    )
+
+    try:
+        query_embedding = (
+            embedding_model.embed(
+                query
+            )
+        )
+
+        rows = (
+            get_chunks_with_embeddings(
+                EMBEDDING_MODEL_NAME
+            )
+        )
+
+        candidates = []
+
+        for row in rows:
+            try:
+                raw_embedding = (
+                    row["embedding"]
+                )
+
+                embedding = json.loads(
+                    raw_embedding
+                )
+
+                embedding = [
+                    float(value)
+                    for value
+                    in embedding
+                ]
+
+            except (
+                TypeError,
+                ValueError,
+                json.JSONDecodeError,
+                KeyError,
+            ):
+                continue
+
+            raw_similarity = (
+                cosine_similarity(
+                    query_embedding,
+                    embedding,
+                )
+            )
+
+            semantic_score = (
+                normalize_similarity(
+                    raw_similarity
+                )
+            )
+
+            file_path = (
+                row["file_path"]
+            )
+
+            file_name = (
+                file_path
+                .replace("\\", "/")
+                .rsplit("/", 1)[-1]
+            )
+
+            candidates.append(
+                {
+                    "file_path": (
+                        file_path
+                    ),
+                    "file_name": (
+                        file_name
+                    ),
+                    "chunk_index": (
+                        row["chunk_index"]
+                    ),
+                    "text": (
+                        row["chunk_text"]
+                    ),
+                    "page_number": (
+                        row["page_number"]
+                    ),
+                    "section_name": (
+                        row["section_name"]
+                    ),
+                    "lexical_score": 0.0,
+                    "lexical_rank": None,
+                    "snippet": "",
+                    "semantic_score": (
+                        semantic_score
+                    ),
+                    "retrieval_score": (
+                        semantic_score
+                    ),
+                    "retrieval_method": (
+                        "DENSE"
+                    ),
+                }
+            )
+
+        candidates.sort(
+            key=lambda candidate: (
+                -candidate[
+                    "semantic_score"
+                ]
+            )
+        )
+
+        return candidates[
+            :candidate_limit
+        ]
+
+    finally:
+        embedding_model.unload()
+
+
+# =========================================================
+# Candidate fusion
+# =========================================================
+
+def fuse_candidates(
+    lexical: list,
+    dense: list,
+):
+    """
+    Merge lexical and dense candidates using:
+
+        (file_path, chunk_index)
+
+    as the chunk identity.
+
+    Chunks appearing in both channels become HYBRID.
+    """
+
+    merged = {}
+
+    for candidate in lexical:
+        key = (
+            candidate["file_path"],
+            candidate["chunk_index"],
+        )
+
+        item = dict(
+            candidate
+        )
+
+        item.setdefault(
+            "semantic_score",
+            0.0,
+        )
+
+        item["retrieval_method"] = (
+            "FTS5"
+        )
+
+        merged[key] = item
+
+    for candidate in dense:
+        key = (
+            candidate["file_path"],
+            candidate["chunk_index"],
+        )
+
+        existing = merged.get(
+            key
+        )
+
+        if existing is None:
+            merged[key] = dict(
+                candidate
+            )
+            continue
+
+        existing[
+            "semantic_score"
+        ] = candidate.get(
+            "semantic_score",
+            0.0,
+        )
+
+        existing[
+            "retrieval_method"
+        ] = "HYBRID"
+
+    return list(
+        merged.values()
+    )
 
 
 # =========================================================
@@ -356,20 +640,34 @@ def calculate_retrieval_score(
         )
     )
 
-    lexical_rank = max(
-        1,
-        int(
-            candidate.get(
-                "lexical_rank",
-                1,
-            )
-        ),
+    raw_lexical_rank = (
+        candidate.get(
+            "lexical_rank"
+        )
     )
 
-    lexical_rank_bonus = (
-        1.0
-        / lexical_rank
-    )
+    if raw_lexical_rank is None:
+        lexical_rank_bonus = 0.0
+
+    else:
+        try:
+            lexical_rank = max(
+                1,
+                int(
+                    raw_lexical_rank
+                ),
+            )
+
+            lexical_rank_bonus = (
+                1.0
+                / lexical_rank
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            lexical_rank_bonus = 0.0
 
     noise_penalty = (
         code_noise_score(
@@ -392,13 +690,47 @@ def calculate_retrieval_score(
         len(text) / 500.0,
     )
 
+    semantic_score = float(
+        candidate.get(
+            "semantic_score",
+            0.0,
+        )
+        or 0.0
+    )
+
+    #
+    # Hybrid retrieval score
+    #
+    # Semantic similarity is intentionally the strongest
+    # single component, while lexical evidence still retains
+    # substantial influence.
+    #
     score = (
-        (0.60 * text_coverage)
-        + (0.16 * filename_coverage)
-        + (0.05 * section_coverage)
-        + (0.12 * lexical_rank_bonus)
-        + (0.07 * length_bonus)
-        - (0.20 * noise_penalty)
+        (0.42 * text_coverage)
+        + (
+            0.10
+            * filename_coverage
+        )
+        + (
+            0.04
+            * section_coverage
+        )
+        + (
+            0.08
+            * lexical_rank_bonus
+        )
+        + (
+            0.06
+            * length_bonus
+        )
+        + (
+            0.50
+            * semantic_score
+        )
+        - (
+            0.20
+            * noise_penalty
+        )
     )
 
     candidate[
@@ -429,12 +761,22 @@ def rerank_candidates(
     return sorted(
         candidates,
         key=lambda candidate: (
-            -candidate[
-                "retrieval_score"
-            ],
-            candidate[
-                "lexical_score"
-            ],
+            -candidate.get(
+                "retrieval_score",
+                0.0,
+            ),
+            -candidate.get(
+                "semantic_score",
+                0.0,
+            ),
+            candidate.get(
+                "lexical_rank"
+            )
+            if candidate.get(
+                "lexical_rank"
+            )
+            is not None
+            else float("inf"),
         ),
     )
 
@@ -446,6 +788,15 @@ def rerank_candidates(
 def remove_exact_duplicates(
     candidates: list,
 ):
+    """
+    Remove duplicate chunk text while preserving the
+    highest-ranked occurrence.
+
+    Important:
+    This should run AFTER hybrid scoring so that the best
+    copy survives.
+    """
+
     seen = set()
     result = []
 
@@ -486,6 +837,11 @@ def diversify_by_file(
         MAX_CHUNKS_PER_FILE
     ),
 ):
+    """
+    Prevent one repetitive file from monopolizing the final
+    evidence candidate set.
+    """
+
     file_counts = defaultdict(
         int
     )
@@ -531,14 +887,29 @@ def retrieve_candidates(
     ),
 ):
     """
-    Recall v1 retrieval pipeline.
+    Recall hybrid evidence retrieval pipeline.
 
-    FTS5 broad retrieval
-        -> quality filtering
-        -> duplicate removal
-        -> content-aware reranking
-        -> file diversity
-        -> final candidates
+    Pipeline:
+
+        FTS5 lexical retrieval
+            +
+        global dense retrieval over cached embeddings
+            ↓
+        candidate fusion
+            ↓
+        minimum evidence quality
+            ↓
+        hybrid scoring
+            ↓
+        duplicate removal
+            ↓
+        per-file diversity
+            ↓
+        final chunk candidates
+
+    Dense retrieval searches only embeddings that already
+    exist in SQLite. It does not generate missing document
+    embeddings during a user query.
     """
 
     if not query:
@@ -554,12 +925,40 @@ def retrieve_candidates(
         result_limit,
     )
 
-    candidates = lexical_candidates(
+    # -----------------------------------------------------
+    # Lexical channel
+    # -----------------------------------------------------
+
+    lexical = lexical_candidates(
         query=query,
         candidate_limit=(
             candidate_limit
         ),
     )
+
+    # -----------------------------------------------------
+    # Dense semantic channel
+    # -----------------------------------------------------
+
+    dense = dense_candidates(
+        query=query,
+        candidate_limit=(
+            candidate_limit
+        ),
+    )
+
+    # -----------------------------------------------------
+    # Fusion
+    # -----------------------------------------------------
+
+    candidates = fuse_candidates(
+        lexical=lexical,
+        dense=dense,
+    )
+
+    # -----------------------------------------------------
+    # Quality filtering
+    # -----------------------------------------------------
 
     candidates = (
         filter_candidate_quality(
@@ -567,11 +966,12 @@ def retrieve_candidates(
         )
     )
 
-    candidates = (
-        remove_exact_duplicates(
-            candidates
-        )
-    )
+    # -----------------------------------------------------
+    # Hybrid scoring BEFORE deduplication
+    #
+    # This ensures that when duplicate CV copies exist,
+    # the strongest semantic/lexical version survives.
+    # -----------------------------------------------------
 
     candidates = (
         rerank_candidates(
@@ -579,6 +979,20 @@ def retrieve_candidates(
             candidates,
         )
     )
+
+    # -----------------------------------------------------
+    # Exact duplicate removal
+    # -----------------------------------------------------
+
+    candidates = (
+        remove_exact_duplicates(
+            candidates
+        )
+    )
+
+    # -----------------------------------------------------
+    # File diversity
+    # -----------------------------------------------------
 
     candidates = (
         diversify_by_file(

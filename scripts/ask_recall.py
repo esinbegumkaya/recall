@@ -1,5 +1,4 @@
-﻿import re
-from pathlib import Path
+﻿from pathlib import Path
 import sys
 
 
@@ -13,601 +12,187 @@ sys.path.append(
 )
 
 
-from foundry_local_sdk import (
-    Configuration,
-    FoundryLocalManager,
-)
-
-from recall.database import (
-    initialize_database,
-    get_chunks_with_embeddings,
-)
-
-from recall.retriever import (
-    section_aware_dense_retrieve,
-)
-
-from recall.intent import (
-    detect_section_intent,
-    detect_query_mode,
-)
-
-from recall.evidence import (
-    deduplicate_overlapping_evidence_units,
-    rank_evidence_units,
-)
-
-from recall.evidence_gate import (
-    filter_by_evidence_type,
-    filter_by_topic,
-)
-
-from recall.nli_judge import (
-    LocalNLIJudge,
-)
-
-from recall.generator import (
-    generate_grounded_answer_from_evidence,
-)
+from recall.engine import search_recall
 
 
-EMBEDDING_MODEL_NAME = (
-    "qwen3-embedding-0.6b"
-)
+def print_sources(sources):
+    if not sources:
+        return
 
-CHAT_MODEL_NAME = (
-    "qwen3.5-2b"
-)
+    print("\nSOURCES")
+    print("=" * 70)
 
-TOP_K = 5
+    for source in sources:
+        source_number = source.get(
+            "source_number"
+        )
 
-NLI_THRESHOLD = 0.15
+        file_name = source.get(
+            "file_name"
+        )
 
-SECTION_BOOST = 0.075
-HEADING_PENALTY = 0.05
+        print(
+            f"\n[Source {source_number}] "
+            f"{file_name}"
+        )
+
+        page_number = source.get(
+            "page_number"
+        )
+
+        if page_number is not None:
+            print(
+                f"Page: {page_number}"
+            )
+
+        section_name = source.get(
+            "section_name"
+        )
+
+        if section_name:
+            print(
+                f"Section: {section_name}"
+            )
+
+        chunk_index = source.get(
+            "chunk_index"
+        )
+
+        if chunk_index is not None:
+            print(
+                f"Chunk: {chunk_index}"
+            )
+
+        parent_text = source.get(
+            "parent_text"
+        )
+
+        if parent_text:
+            print(
+                f"Parent: {parent_text}"
+            )
+
+        evidence_text = source.get(
+            "text"
+        )
+
+        if evidence_text:
+            print(
+                f"Evidence: {evidence_text}"
+            )
 
 
-def split_compound_query(query):
-    """
-    Split only clearly repeated question clauses.
+def print_diagnostics(result):
+    print("\nDIAGNOSTICS")
+    print("=" * 70)
 
-    Examples:
-    - "... AI agents, and where did ... IBM Planning Analytics?"
-      -> two independent subqueries
-
-    Ordinary conjunctions such as
-    "AI agents and RAG systems" remain intact.
-    """
-    parts = re.split(
-        r"\s*,?\s+and\s+"
-        r"(?=(?:where|did|does|what|which|how)\b)",
-        query.strip(),
-        flags=re.IGNORECASE,
+    print(
+        f"Candidates: "
+        f"{result.get('candidate_count', 0)}"
     )
 
-    cleaned = [
-        part.strip()
-        for part in parts
-        if part.strip()
-    ]
+    print(
+        f"Accepted evidence: "
+        f"{result.get('evidence_count', 0)}"
+    )
 
-    return cleaned or [query.strip()]
+    print(
+        f"Abstained: "
+        f"{result.get('abstained', False)}"
+    )
+
+    abstention_reason = result.get(
+        "abstention_reason"
+    )
+
+    if abstention_reason:
+        print(
+            f"Abstention reason: "
+            f"{abstention_reason}"
+        )
+
+    elapsed_seconds = result.get(
+        "elapsed_seconds"
+    )
+
+    if elapsed_seconds is not None:
+        print(
+            f"Elapsed: "
+            f"{elapsed_seconds:.2f}s"
+        )
+
 
 def main():
-    initialize_database()
+    print("Recall — Local RAG Assistant")
+    print("Type 'exit' or 'quit' to close.")
 
-    query = input(
-        "Ask Recall: "
-    ).strip()
-
-    if not query:
-        print(
-            "Question cannot be empty."
-        )
-        return
-
-    rows = list(
-        get_chunks_with_embeddings(
-            EMBEDDING_MODEL_NAME
-        )
-    )
-
-    if not rows:
-        print(
-            "No indexed chunks found."
-        )
-        return
-
-    print(
-        "\nLoading local models..."
-    )
-
-    FoundryLocalManager.initialize(
-        Configuration(
-            app_name="Recall"
-        )
-    )
-
-    manager = (
-        FoundryLocalManager.instance
-    )
-
-    embedding_model = (
-        manager.catalog.get_model(
-            EMBEDDING_MODEL_NAME
-        )
-    )
-
-    chat_model = (
-        manager.catalog.get_model(
-            CHAT_MODEL_NAME
-        )
-    )
-
-    embedding_model.load()
-
-    if not chat_model.is_cached:
-        print(
-            f"\nDownloading "
-            f"{CHAT_MODEL_NAME}..."
-        )
-
-        def show_progress(progress):
-            print(
-                f"\rDownload: "
-                f"{progress:.1f}%",
-                end="",
-                flush=True,
-            )
-
-        chat_model.download(
-            show_progress
-        )
-
-        print(
-            "\nDownload complete."
-        )
-
-    chat_model.load()
-
-    embedding_client = (
-        embedding_model
-        .get_embedding_client()
-    )
-
-    chat_client = (
-        chat_model
-        .get_chat_client()
-    )
-
-    embedding_response = (
-        embedding_client
-        .generate_embedding(
-            query
-        )
-    )
-
-    query_embedding = (
-        embedding_response
-        .data[0]
-        .embedding
-    )
-
-    results = (
-        section_aware_dense_retrieve(
-            query=query,
-            query_embedding=query_embedding,
-            rows=rows,
-            detect_section_intent=(
-                detect_section_intent
-            ),
-            detect_query_mode=(
-                detect_query_mode
-            ),
-            top_k=TOP_K,
-            section_boost=SECTION_BOOST,
-            heading_penalty=(
-                HEADING_PENALTY
-            ),
-        )
-    )
-
-    query_mode = (
-        detect_query_mode(
-            query
-        )
-    )
-
-    intended_section = (
-        detect_section_intent(
-            query
-        )
-    )
-
-    print(
-        "\nQuery mode:"
-    )
-
-    print(
-        query_mode
-    )
-
-    print(
-        "\nDetected section intent:"
-    )
-
-    print(
-        intended_section
-    )
-
-    print(
-        "\nRetrieved sources:"
-    )
-
-    for index, result in enumerate(
-        results,
-        start=1,
-    ):
-        print()
-
-        print(
-            f"[Source {index}]"
-        )
-
-        print(
-            f"File: "
-            f"{Path(result['file_path']).name}"
-        )
-
-        if result.get(
-            "page_number"
-        ) is not None:
-            print(
-                f"Page: "
-                f"{result['page_number']}"
-            )
-
-        if result.get(
-            "section_name"
+    while True:
+        try:
+            query = input(
+                "\nAsk Recall: "
+            ).strip()
+        except (
+            KeyboardInterrupt,
+            EOFError,
         ):
+            print("\nGoodbye.")
+            break
+
+        if not query:
             print(
-                f"Section: "
-                f"{result['section_name']}"
+                "Question cannot be empty."
+            )
+            continue
+
+        if query.lower() in {
+            "exit",
+            "quit",
+        }:
+            print(
+                "Goodbye."
+            )
+            break
+
+        try:
+            result = search_recall(
+                query
+            )
+        except Exception as exc:
+            print(
+                "\nRecall could not process "
+                "the question."
             )
 
+            print(
+                f"Error: {exc}"
+            )
+
+            continue
+
+        print("\nANSWER")
+        print("=" * 70)
+
         print(
-            f"Score: "
-            f"{result['final_score']:.4f}"
+            result.get(
+                "answer",
+                (
+                    "The available files do not "
+                    "provide enough evidence to "
+                    "answer this question."
+                ),
+            )
         )
 
-    generation_results = results
+        print_sources(
+            result.get(
+                "sources",
+                [],
+            )
+        )
 
-    if intended_section is not None:
-        matching_section_results = [
+        print_diagnostics(
             result
-            for result in results
-            if result.get(
-                "section_name"
-            ) == intended_section
-        ]
-
-        if matching_section_results:
-            generation_results = (
-                matching_section_results
-            )
-
-    ranked_evidence = (
-        rank_evidence_units(
-            query=query,
-            results=generation_results,
-            embedding_client=embedding_client,
-            top_k=10,
         )
-    )
-
-    structural_evidence = (
-        filter_by_evidence_type(
-            query,
-            ranked_evidence,
-        )
-    )
-
-    subqueries = split_compound_query(
-        query
-    )
-
-    print(
-        "\nQuery subclaims:"
-    )
-
-    for index, subquery in enumerate(
-        subqueries,
-        start=1,
-    ):
-        print(
-            f"{index}. {subquery}"
-        )
-
-    topical_evidence = []
-    topical_seen = set()
-
-    for subquery in subqueries:
-        subquery_evidence = (
-            filter_by_topic(
-                subquery,
-                structural_evidence,
-            )
-        )
-
-        for unit in subquery_evidence:
-            evidence_key = (
-                unit.get("file_path"),
-                unit.get("chunk_index"),
-                unit.get("unit_index"),
-                unit.get("text"),
-                unit.get("parent_text"),
-            )
-
-            if evidence_key in topical_seen:
-                continue
-
-            topical_seen.add(
-                evidence_key
-            )
-
-            topical_evidence.append(
-                unit
-            )
-
-    print(
-        "\nStructural evidence units:"
-    )
-
-    for index, unit in enumerate(
-        structural_evidence,
-        start=1,
-    ):
-        print(
-            f"{index}. {unit['text']}"
-        )
-
-    print(
-        "\nTopical evidence units:"
-    )
-
-    for index, unit in enumerate(
-        topical_evidence,
-        start=1,
-    ):
-        print(
-            f"{index}. {unit['text']}"
-        )
-
-        if unit.get("parent_text"):
-            print(
-                f"   Parent: "
-                f"{unit['parent_text']}"
-            )
-
-    judge = LocalNLIJudge()
-
-    accepted_evidence = []
-    accepted_seen = set()
-
-    print(
-        "\nNLI validation:"
-    )
-
-    validation_index = 1
-
-    for subquery in subqueries:
-        subquery_evidence = (
-            filter_by_topic(
-                subquery,
-                structural_evidence,
-            )
-        )
-
-        hypothesis = judge.build_hypothesis(
-            subquery
-        )
-
-        print(
-            f"\nSubclaim: {subquery}"
-        )
-
-        print(
-            f"Hypothesis: {hypothesis}"
-        )
-
-        for unit in subquery_evidence:
-            result = judge.judge_claim(
-                hypothesis,
-                unit["text"],
-            )
-
-            score = result[
-                "entailment_score"
-            ]
-
-            accepted = (
-                score >= NLI_THRESHOLD
-            )
-
-            print(
-                f"{validation_index}. Entailment: "
-                f"{score:.4f} | "
-                f"{'ACCEPT' if accepted else 'REJECT'}"
-            )
-
-            print(
-                f"   {unit['text']}"
-            )
-
-            validation_index += 1
-
-            if not accepted:
-                continue
-
-            evidence_key = (
-                unit.get("file_path"),
-                unit.get("chunk_index"),
-                unit.get("unit_index"),
-                unit.get("text"),
-                unit.get("parent_text"),
-            )
-
-            if evidence_key in accepted_seen:
-                continue
-
-            accepted_seen.add(
-                evidence_key
-            )
-
-            accepted_unit = dict(
-                unit
-            )
-
-            accepted_unit[
-                "entailment_score"
-            ] = score
-
-            accepted_unit[
-                "supporting_subquery"
-            ] = subquery
-
-            accepted_unit[
-                "supporting_hypothesis"
-            ] = hypothesis
-
-            accepted_evidence.append(
-                accepted_unit
-            )
-
-    accepted_evidence = (
-        deduplicate_overlapping_evidence_units(
-            accepted_evidence
-        )
-    )
-
-    print(
-        "\nAccepted evidence:"
-    )
-
-    if not accepted_evidence:
-        print(
-            "No supported evidence."
-        )
-    else:
-        for index, unit in enumerate(
-            accepted_evidence,
-            start=1,
-        ):
-            print(
-                f"{index}. {unit['text']}"
-            )
-
-            if unit.get("parent_text"):
-                print(
-                    f"   Parent: "
-                    f"{unit['parent_text']}"
-                )
-
-    print(
-        "\nGeneration sources:"
-    )
-
-    for index, unit in enumerate(
-        accepted_evidence,
-        start=1,
-    ):
-        print()
-
-        print(
-            f"[Generation Source {index}]"
-        )
-
-        print(
-            f"File: "
-            f"{Path(unit['file_path']).name}"
-        )
-
-        if unit.get(
-            "page_number"
-        ) is not None:
-            print(
-                f"Page: "
-                f"{unit['page_number']}"
-            )
-
-        if unit.get(
-            "section_name"
-        ):
-            print(
-                f"Section: "
-                f"{unit['section_name']}"
-            )
-
-        if unit.get(
-            "chunk_index"
-        ) is not None:
-            print(
-                f"Chunk: "
-                f"{unit['chunk_index']}"
-            )
-
-        if unit.get(
-            "parent_text"
-        ):
-            print(
-                f"Parent: "
-                f"{unit['parent_text']}"
-            )
-
-        print(
-            f"Evidence: "
-            f"{unit['text']}"
-        )
-
-        if unit.get(
-            "entailment_score"
-        ) is not None:
-            print(
-                f"Entailment: "
-                f"{unit['entailment_score']:.4f}"
-            )
-
-    print(
-        "\nGenerating grounded answer..."
-    )
-
-    answer = (
-        generate_grounded_answer_from_evidence(
-            chat_client=chat_client,
-            query=query,
-            evidence_units=accepted_evidence,
-            claim_judge=judge,
-        )
-    )
-
-    print(
-        "\nANSWER"
-    )
-
-    print(
-        "=" * 70
-    )
-
-    print(
-        answer
-    )
-
-    print(
-        "=" * 70
-    )
-
-    chat_model.unload()
-    embedding_model.unload()
 
 
 if __name__ == "__main__":

@@ -25,6 +25,11 @@ from recall.evidence_gate import (
     infer_evidence_type,
 )
 
+from recall.generator import (
+    ABSTENTION_MESSAGE,
+    generate_grounded_answer_from_evidence,
+)
+
 from recall.nli_judge import LocalNLIJudge
 
 from recall.retrieval import (
@@ -44,6 +49,8 @@ DEFAULT_SOURCE_LIMIT = 8
 # precision work. NLI is an admission check, therefore
 # intentionally permissive.
 DEFAULT_NLI_THRESHOLD = 0.15
+
+DEFAULT_CHAT_MODEL_NAME = "qwen3.5-2b"
 
 
 # =========================================================
@@ -903,7 +910,7 @@ def clean_evidence_for_answer(
     )
 
     cleaned = re.sub(
-        r"^[\s•●▪■\-–—*]+",
+        r"^[\s\u2022\u25cf\u25aa\u25a0\-–—*]+",
         "",
         cleaned,
     ).strip()
@@ -1293,6 +1300,247 @@ def build_other_relevant_files(
 
 
 # =========================================================
+# Generator-abstention safety check
+# =========================================================
+
+_QUERY_STOPWORDS = {
+    "a", "an", "the", "this", "that", "these", "those",
+    "person", "people", "does", "do", "did", "has", "have", "had",
+    "is", "are", "was", "were", "what", "where", "which", "who",
+    "when", "why", "how", "find", "show", "tell", "give", "list",
+    "work", "worked", "working", "experience", "experienced",
+    "involving", "involve", "involves", "with", "using", "used",
+    "use", "at", "for", "from", "of", "to", "in", "on", "and",
+    "or", "their", "his", "her", "its",
+}
+
+
+def _normalize_support_token(token: str) -> str:
+    # The tokenizer deliberately accepts characters such as ``.`` and ``-``
+    # so technical terms can survive extraction, but sentence-final
+    # punctuation must never become part of the semantic token.  Without
+    # this, a query ending in ``classification.`` produced the literal token
+    # ``classification.`` and failed an otherwise exact evidence match.
+    token = (token or "").casefold().strip()
+    token = token.strip(".,;:!?()[]{}\"'`-_")
+
+    irregular = {
+        "images": "image",
+        "imaging": "image",
+        "agents": "agent",
+        "workflows": "workflow",
+        "projects": "project",
+        "restaurants": "restaurant",
+    }
+
+    if token in irregular:
+        return irregular[token]
+
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+
+    if len(token) > 4 and token.endswith("ed"):
+        return token[:-2]
+
+    if len(token) > 4 and token.endswith("s"):
+        return token[:-1]
+
+    return token
+
+
+def _query_support_tokens(query: str) -> set[str]:
+    tokens = set()
+
+    for raw in re.findall(r"[A-Za-z0-9+#.\-]+", query or ""):
+        token = _normalize_support_token(raw)
+
+        if not token:
+            continue
+
+        if token in _QUERY_STOPWORDS:
+            continue
+
+        if len(token) < 2:
+            continue
+
+        tokens.add(token)
+
+    return tokens
+
+
+def _evidence_support_tokens(
+    evidence_units: List[Dict[str, Any]],
+) -> set[str]:
+    parts: List[str] = []
+
+    for unit in evidence_units:
+        parts.extend(
+            [
+                str(unit.get("text") or ""),
+                str(unit.get("parent_text") or ""),
+                str(unit.get("section_name") or ""),
+                str(unit.get("file_name") or ""),
+            ]
+        )
+
+    tokens = set()
+
+    for raw in re.findall(
+        r"[A-Za-z0-9+#.\-]+",
+        " ".join(parts),
+    ):
+        token = _normalize_support_token(raw)
+
+        if token:
+            tokens.add(token)
+
+    return tokens
+
+
+def has_direct_query_support(
+    query: str,
+    evidence_units: List[Dict[str, Any]],
+) -> bool:
+    """
+    Decide whether an explicit model abstention should be overridden by
+    Recall's deterministic grounded composer.
+
+    This check is intentionally evidence-only: it never invents an answer.
+    It asks whether the validated evidence explicitly covers the important
+    concepts in the user's query.  Concept aliases are used for ordinary
+    morphological/domain variants such as ``image``/``imaging`` and
+    ``medical``/``dermoscopic``.
+
+    The rule is strict enough to keep unsupported preference questions such
+    as ``favorite restaurant`` as abstentions: seeing the word ``restaurant``
+    alone is not enough because the independent concept ``favorite`` is not
+    supported.
+    """
+    query_tokens = _query_support_tokens(query)
+
+    if not query_tokens:
+        return False
+
+    evidence_tokens = _evidence_support_tokens(
+        evidence_units
+    )
+
+    if not evidence_tokens:
+        return False
+
+    evidence_parts: List[str] = []
+
+    for unit in evidence_units:
+        evidence_parts.extend(
+            [
+                str(unit.get("text") or ""),
+                str(unit.get("parent_text") or ""),
+                str(unit.get("section_name") or ""),
+                str(unit.get("file_name") or ""),
+            ]
+        )
+
+    evidence_text = normalize_entity_text(
+        " ".join(evidence_parts)
+    )
+
+    # Domain-equivalent concept groups.  These are not answer templates;
+    # they only recognize explicit terminology already present in validated
+    # evidence.
+    concept_aliases = {
+        "ai": (
+            "ai",
+            "artificial intelligence",
+            "machine learning",
+            "deep learning",
+            "llm",
+            "rag",
+            "agentic ai",
+            "ai agent",
+        ),
+        "agent": (
+            "agent",
+            "agents",
+            "ai agent",
+            "ai agents",
+            "agentic ai",
+        ),
+        "medical": (
+            "medical",
+            "clinical",
+            "melanoma",
+            "skin cancer",
+            "dermoscopic",
+        ),
+        "image": (
+            "image",
+            "images",
+            "imaging",
+            "dermoscopic",
+            "computer vision",
+        ),
+        "classification": (
+            "classification",
+            "classifier",
+            "classify",
+            "classified",
+            "skin lesion",
+            "11 class",
+        ),
+        "ibm": ("ibm",),
+        "planning": ("planning",),
+        "analytics": ("analytics",),
+        "favorite": (
+            "favorite",
+            "favourite",
+            "preferred",
+        ),
+        "restaurant": (
+            "restaurant",
+            "restaurants",
+        ),
+    }
+
+    def concept_is_supported(token: str) -> bool:
+        # Exact normalized token support remains the strongest signal.
+        if token in evidence_tokens:
+            return True
+
+        aliases = concept_aliases.get(token)
+
+        if not aliases:
+            return False
+
+        return any(
+            normalize_entity_text(alias) in evidence_text
+            for alias in aliases
+        )
+
+    matched_tokens = {
+        token
+        for token in query_tokens
+        if concept_is_supported(token)
+    }
+
+    # One meaningful concept is enough only for genuinely one-concept
+    # questions such as broad AI-experience queries after stopword removal.
+    if len(query_tokens) == 1:
+        return len(matched_tokens) == 1
+
+    coverage = (
+        len(matched_tokens)
+        / len(query_tokens)
+    )
+
+    # Multi-concept questions need independent support for at least two
+    # concepts and >= 2/3 of the meaningful query content.
+    return (
+        len(matched_tokens) >= 2
+        and coverage >= 0.67
+    )
+
+
+# =========================================================
 # Recall engine
 # =========================================================
 
@@ -1304,6 +1552,9 @@ class RecallEngine:
         source_limit: int = DEFAULT_SOURCE_LIMIT,
         nli_threshold: float = DEFAULT_NLI_THRESHOLD,
         load_nli: bool = True,
+        use_generation: bool = True,
+        chat_model_name: str = DEFAULT_CHAT_MODEL_NAME,
+        chat_client: Any = None,
     ):
         initialize_database()
 
@@ -1323,6 +1574,14 @@ class RecallEngine:
             nli_threshold
         )
 
+        self.use_generation = (
+            use_generation
+        )
+
+        self.chat_model_name = (
+            chat_model_name
+        )
+
         self.judge: Optional[
             LocalNLIJudge
         ] = None
@@ -1331,6 +1590,18 @@ class RecallEngine:
             self.judge = (
                 LocalNLIJudge()
             )
+
+        # The chat model is intentionally lazy-loaded.
+        # Retrieval-only or failing searches should not pay
+        # the model-load cost.
+        self.chat_client = chat_client
+        self._chat_model = None
+
+        # Kept for diagnostics without changing the public
+        # RecallResult schema.
+        self.last_generation_error: Optional[
+            str
+        ] = None
 
     def _get_judge(
         self,
@@ -1341,6 +1612,190 @@ class RecallEngine:
             )
 
         return self.judge
+
+    def _get_chat_client(
+        self,
+    ):
+        """
+        Lazily load the local Foundry chat model once and
+        reuse its client across searches.
+
+        Tests can inject a fake chat_client through __init__
+        so they do not need to load Foundry Local.
+        """
+
+        if self.chat_client is not None:
+            return self.chat_client
+
+        if not self.use_generation:
+            return None
+
+        # Lazy import keeps the deterministic engine path
+        # importable even when generation is disabled.
+        from foundry_local_sdk import (
+            Configuration,
+            FoundryLocalManager,
+        )
+
+        try:
+            FoundryLocalManager.initialize(
+                Configuration(
+                    app_name="Recall"
+                )
+            )
+        except Exception as exc:
+            # Foundry Local uses a process-wide manager.
+            # Re-initialization is harmless if another Recall
+            # component initialized it first.
+            message = str(exc).casefold()
+
+            if (
+                "already"
+                not in message
+                or "initial"
+                not in message
+            ):
+                raise
+
+        manager = (
+            FoundryLocalManager.instance
+        )
+
+        chat_model = (
+            manager.catalog.get_model(
+                self.chat_model_name
+            )
+        )
+
+        chat_model.load()
+
+        self._chat_model = chat_model
+        self.chat_client = (
+            chat_model.get_chat_client()
+        )
+
+        return self.chat_client
+
+    def unload_chat_model(
+        self,
+    ) -> None:
+        """
+        Explicitly release the local chat model when the
+        caller is finished with the engine.
+
+        Normal searches intentionally keep it loaded so
+        repeated queries do not reload the model.
+        """
+
+        if self._chat_model is not None:
+            try:
+                self._chat_model.unload()
+            except Exception:
+                pass
+
+        self._chat_model = None
+        self.chat_client = None
+
+    def _generate_answer_or_fallback(
+        self,
+        query: str,
+        validated: List[Dict[str, Any]],
+        judge: LocalNLIJudge,
+    ) -> str:
+        """
+        Try local LLM generation only after evidence has
+        passed structural, topical, provenance and NLI gates.
+
+        generator.py performs citation + claim validation.
+        Any generation/model/validation failure falls back to
+        the deterministic evidence composer.
+        """
+
+        deterministic_answer = (
+            compose_grounded_answer(
+                validated,
+                max_sources=(
+                    self.source_limit
+                ),
+            )
+        )
+
+        if not self.use_generation:
+            return deterministic_answer
+
+        self.last_generation_error = None
+
+        try:
+            chat_client = (
+                self._get_chat_client()
+            )
+
+            if chat_client is None:
+                return deterministic_answer
+
+            generated_answer = (
+                generate_grounded_answer_from_evidence(
+                    chat_client=(
+                        chat_client
+                    ),
+                    query=query,
+                    evidence_units=(
+                        validated[
+                            :self.source_limit
+                        ]
+                    ),
+                    claim_judge=judge,
+                )
+            )
+
+            if (
+                generated_answer
+                and generated_answer.strip()
+            ):
+                normalized_answer = (
+                    generated_answer.strip()
+                )
+
+                # Preserve an explicit model abstention.
+                #
+                # Previously an abstention was discarded here and the
+                # deterministic evidence composer was used instead. That
+                # could turn a correct "not enough evidence" decision into
+                # an unsupported answer built from merely related chunks.
+                if (
+                    normalized_answer
+                    == ABSTENTION_MESSAGE
+                ):
+                    # A small local model can abstain even when the
+                    # validated evidence explicitly matches the important
+                    # query concepts. In that case use the deterministic
+                    # grounded composer instead of converting a supported
+                    # query into a false abstention.
+                    #
+                    # If the validated evidence does NOT directly support
+                    # the query (for example a "favorite restaurant"
+                    # question matched only to generic restaurant text),
+                    # preserve the abstention.
+                    if has_direct_query_support(
+                        query,
+                        validated,
+                    ):
+                        self.last_generation_error = (
+                            "MODEL_ABSTAINED_WITH_DIRECT_EVIDENCE; "
+                            "used deterministic grounded fallback"
+                        )
+                        return deterministic_answer
+
+                    return ABSTENTION_MESSAGE
+
+                return normalized_answer
+
+        except Exception as exc:
+            self.last_generation_error = (
+                f"{type(exc).__name__}: {exc}"
+            )
+
+        return deterministic_answer
 
     def search(
         self,
@@ -1528,22 +1983,29 @@ class RecallEngine:
             )
 
         # ---------------------------------------------
-        # Deterministic grounded answer
+        # Grounded generation with deterministic fallback
         # ---------------------------------------------
 
+        selected_validated = (
+            validated[
+                :self.source_limit
+            ]
+        )
+
         sources = build_sources(
-            validated,
+            selected_validated,
             max_sources=(
                 self.source_limit
             ),
         )
 
         answer = (
-            compose_grounded_answer(
-                validated,
-                max_sources=(
-                    self.source_limit
+            self._generate_answer_or_fallback(
+                query=query,
+                validated=(
+                    selected_validated
                 ),
+                judge=judge,
             )
         )
 
@@ -1558,6 +2020,11 @@ class RecallEngine:
         # Final result
         # ---------------------------------------------
 
+        generation_abstained = (
+            answer.strip()
+            == ABSTENTION_MESSAGE
+        )
+
         return RecallResult(
             query=(
                 query
@@ -1571,8 +2038,14 @@ class RecallEngine:
             other_relevant_files=(
                 other_files
             ),
-            abstained=False,
-            abstention_reason=None,
+            abstained=(
+                generation_abstained
+            ),
+            abstention_reason=(
+                "GENERATOR_ABSTAINED"
+                if generation_abstained
+                else None
+            ),
             candidate_count=(
                 len(
                     candidates

@@ -40,18 +40,45 @@ def is_low_information_unit(
 
 
 
-MIXED_EVIDENCE_LABELS = {
-    "technical",
-    "technical skills",
-    "cloud",
-    "cloud platform",
-    "cloud platforms",
-    "ai",
-    "artificial intelligence",
-    "data",
-    "data science",
-    "machine learning",
-}
+# A "mixed evidence" unit looks like "Label: value | Label2: value2" --
+# common in resume/CV-style skill lines ("Technical: Python, SQL | Cloud:
+# AWS, Azure"), but the same shape shows up in any structured document
+# (specs, FAQs, product sheets: "Version: 2.1 | Released: 2026-03-01").
+#
+# The previous implementation only recognized this shape when EVERY label
+# was a member of a small, hardcoded vocabulary (MIXED_EVIDENCE_LABELS:
+# "technical", "cloud", "ai", "data science", "machine learning", ...) --
+# tuned to look like the labels used in one specific CV. Any other document
+# with a perfectly well-formed "Label: value | Label: value" structure, but
+# using different label names, would fail this whitelist check and fall
+# through to coarser, less structure-aware splitting further down in
+# split_evidence_units().
+#
+# Fixed by validating the *shape* of a label instead of matching it against
+# a fixed vocabulary: short, mostly-alphabetic, a handful of words at most.
+# This still rejects things that aren't really labels (long sentences,
+# numeric-heavy fragments) without requiring the label text itself to be
+# known in advance.
+_PLAUSIBLE_LABEL_RE = re.compile(
+    r"^[A-Za-z][A-Za-z0-9 /&+\-]*$"
+)
+
+MAX_LABEL_WORDS = 5
+
+
+def is_plausible_label(label: str) -> bool:
+    label = label.strip()
+
+    if not label or len(label) > 40:
+        return False
+
+    if not _PLAUSIBLE_LABEL_RE.match(label):
+        return False
+
+    if len(label.split()) > MAX_LABEL_WORDS:
+        return False
+
+    return True
 
 
 def split_mixed_evidence_units(
@@ -84,25 +111,17 @@ def split_mixed_evidence_units(
         if not match:
             return []
 
-        label = (
-            match.group(1)
-            .strip()
-            .lower()
-        )
+        label = match.group(1).strip()
+        value = match.group(2).strip()
 
-        value = (
-            match.group(2)
-            .strip()
-        )
-
-        if label not in MIXED_EVIDENCE_LABELS:
+        if not is_plausible_label(label):
             return []
 
         if not value:
             return []
 
         labeled_parts.append(
-            f"{match.group(1).strip()}: {value}"
+            f"{label}: {value}"
         )
 
     if len(labeled_parts) < 2:
@@ -138,7 +157,7 @@ def split_evidence_units(
 
     for line in lines:
         cleaned = re.sub(
-            r"^[\sâ€¢â—â–ªâ– \-â€“â€”*]+",
+            r"^[\s•●▪■\-–—*]+",
             "",
             line,
         ).strip()
@@ -172,7 +191,7 @@ def split_evidence_units(
     if len(pipe_parts) > 1:
         return pipe_parts
     parts = re.split(
-        r"\s+[â€¢â—â–ªâ– ]\s+",
+        r"\s+[•●▪■]\s+",
         text,
     )
 
@@ -718,9 +737,3 @@ def attach_parent_context(
             )
 
     return updated_units
-
-
-
-
-
-

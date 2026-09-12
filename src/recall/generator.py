@@ -490,56 +490,98 @@ def normalize_claim_for_nli(
 
 
 
+def _extract_explicit_provenance_suffix(
+    claim: str,
+):
+    """
+    Return an explicit organization-like ``at/for ...`` suffix.
+
+    The generator can legitimately use semantic phrases such as
+    ``for real-world use cases``. Those must not be mistaken for
+    organization attribution. We therefore treat a suffix as provenance
+    only when the text after ``at`` or ``for`` looks entity-like, e.g.
+    ``at Microsoft`` or ``for Cubewise``.
+    """
+    text = (claim or "").strip()
+
+    match = re.search(
+        r"\s+(at|for)\s+([^.!?]+?)(?:[.!?])?$",
+        text,
+    )
+
+    if not match:
+        return None
+
+    candidate = match.group(2).strip()
+
+    if not candidate:
+        return None
+
+    raw_tokens = re.findall(
+        r"[A-Za-z0-9&+#.\-]+",
+        candidate,
+    )
+
+    if not raw_tokens:
+        return None
+
+    # Organization names produced from retrieved evidence normally retain
+    # proper-noun/acronym casing. Lower-case semantic complements such as
+    # "real-world use cases" therefore remain part of the factual claim.
+    looks_entity_like = any(
+        (
+            token[:1].isupper()
+            or (len(token) >= 2 and token.isupper())
+        )
+        for token in raw_tokens
+    )
+
+    if not looks_entity_like:
+        return None
+
+    return {
+        "marker": match.group(1).casefold(),
+        "candidate": candidate,
+        "start": match.start(),
+        "end": match.end(),
+    }
+
+
 def strip_provenance_for_nli(
     claim: str,
 ) -> str:
     """
-    Remove explicit provenance attribution after it has
-    already been validated deterministically.
+    Remove explicit organization attribution after deterministic provenance
+    validation, without stripping ordinary semantic ``for`` phrases.
 
     Examples:
     - "The person worked with AI agents at Microsoft."
       -> "The person worked with AI agents."
     - "The person built the system for Company X."
       -> "The person built the system."
-
-    Only explicit attribution markers handled by
-    provenance_supports_claim are stripped.
-    Other semantic uses such as "with Watson",
-    "during projects", or "in Python" are preserved.
+    - "Built RAG pipelines for real-world use cases."
+      -> unchanged
     """
-    normalized = claim.strip()
+    normalized = (claim or "").strip()
 
-    trailing_punctuation = ""
-
-    if (
+    provenance = _extract_explicit_provenance_suffix(
         normalized
-        and normalized[-1] in ".!?"
-    ):
-        trailing_punctuation = normalized[-1]
-        normalized = normalized[:-1].rstrip()
-
-    provenance_pattern = re.compile(
-        r"\s+(?:at|for)\s+.+$",
-        flags=re.IGNORECASE,
     )
 
-    stripped = provenance_pattern.sub(
-        "",
-        normalized,
-    ).strip()
+    if provenance is None:
+        if normalized and normalized[-1] not in ".!?":
+            normalized += "."
+        return normalized
+
+    stripped = normalized[
+        :provenance["start"]
+    ].rstrip()
 
     if not stripped:
         stripped = normalized
 
-    if (
-        stripped
-        and stripped[-1] not in ".!?"
-    ):
-        stripped += (
-            trailing_punctuation
-            or "."
-        )
+    if stripped and stripped[-1] not in ".!?":
+        stripped += "."
 
     return stripped
 
@@ -604,21 +646,22 @@ def provenance_supports_claim(
     evidence_unit,
 ):
     """
-    Conservative deterministic provenance validation.
+    Conservative deterministic organization-attribution validation.
 
-    Only explicit attribution constructions such as
-    "at <organization>" or "for <organization>" trigger
-    deterministic parent-context validation.
-
-    General semantic phrases such as:
-    - "with Watson"
-    - "during financial planning projects"
-    - "in Python"
-    are left to NLI rather than being misclassified
-    as organization provenance.
+    Only entity-like suffixes such as ``at Microsoft`` or ``for Cubewise``
+    are interpreted as provenance. Semantic phrases such as
+    ``for real-world use cases`` are not provenance and remain available
+    to lexical/NLI validation.
     """
     if not evidence_unit:
         return False
+
+    provenance = _extract_explicit_provenance_suffix(
+        claim
+    )
+
+    if provenance is None:
+        return True
 
     parent_text = normalize_provenance_text(
         evidence_unit.get(
@@ -627,32 +670,14 @@ def provenance_supports_claim(
         )
     )
 
+    # If there is no parent context, leave semantic consistency to the
+    # lexical/NLI validator rather than inventing a provenance relationship.
     if not parent_text:
         return True
 
-    normalized_claim = normalize_provenance_text(
-        claim
+    claim_context = normalize_provenance_text(
+        provenance["candidate"]
     )
-
-    provenance_markers = (
-        " at ",
-        " for ",
-    )
-
-    claim_context = ""
-
-    for marker in provenance_markers:
-        if marker in normalized_claim:
-            claim_context = (
-                normalized_claim.split(
-                    marker,
-                    1,
-                )[1]
-            )
-            break
-
-    if not claim_context:
-        return True
 
     parent_tokens = set(
         re.findall(
@@ -702,6 +727,525 @@ def provenance_supports_claim(
         for token in attribution_tokens
     )
 
+
+def _normalize_support_token(token: str) -> str:
+    token = token.casefold().strip()
+
+    irregular = {
+        "built": "build",
+        "building": "build",
+        "developed": "develop",
+        "developing": "develop",
+        "implemented": "implement",
+        "implementing": "implement",
+        "worked": "work",
+        "working": "work",
+        "used": "use",
+        "using": "use",
+    }
+
+    if token in irregular:
+        return irregular[token]
+
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+
+    if len(token) > 4 and token.endswith("ed"):
+        return token[:-2]
+
+    if len(token) > 4 and token.endswith("s"):
+        return token[:-1]
+
+    return token
+
+
+def _support_tokens(text: str) -> set:
+    """Return factual content tokens for conservative lexical support."""
+    stopwords = {
+        "a", "an", "the", "this", "that", "these", "those",
+        "person", "has", "have", "had", "is", "are", "was", "were",
+        "with", "of", "to", "in", "on", "at", "for", "from", "and",
+        "or", "as", "by", "their", "his", "her", "its", "experience",
+        "experienced",
+    }
+
+    raw_tokens = re.findall(
+        r"[A-Za-z0-9+#.\-]+",
+        text or "",
+    )
+
+    tokens = set()
+
+    for raw_token in raw_tokens:
+        token = _normalize_support_token(raw_token)
+
+        if not token or token in stopwords:
+            continue
+
+        tokens.add(token)
+
+    return tokens
+
+
+def claim_has_strong_lexical_support(
+    claim: str,
+    evidence_text: str,
+) -> bool:
+    """
+    Accept near-extractive restatements before semantic NLI validation.
+
+    This is intentionally conservative: the claim must preserve nearly all
+    of its factual content tokens in the validated evidence. It mainly
+    prevents false negatives when the generator changes grammar such as
+    "develop" -> "developed" or "build" -> "built".
+    """
+    claim_tokens = _support_tokens(claim)
+    evidence_tokens = _support_tokens(evidence_text)
+
+    if len(claim_tokens) < 3 or not evidence_tokens:
+        return False
+
+    # Never allow a new number/year that does not occur in the evidence.
+    claim_numbers = set(re.findall(r"\b\d+(?:\.\d+)?\b", claim or ""))
+    evidence_numbers = set(re.findall(r"\b\d+(?:\.\d+)?\b", evidence_text or ""))
+
+    if not claim_numbers.issubset(evidence_numbers):
+        return False
+
+    supported = claim_tokens & evidence_tokens
+    coverage = len(supported) / len(claim_tokens)
+
+    return coverage >= 0.85
+
+
+
+def _lexical_support_coverage(
+    claim: str,
+    evidence_text: str,
+) -> float:
+    """
+    Return factual-token coverage of a claim by evidence.
+
+    Used only to choose among already validated evidence units when
+    repairing a missing citation. A citation is never added unless the
+    conservative near-extractive support rule also passes.
+    """
+    claim_tokens = _support_tokens(claim)
+    evidence_tokens = _support_tokens(evidence_text)
+
+    if not claim_tokens or not evidence_tokens:
+        return 0.0
+
+    supported = claim_tokens & evidence_tokens
+    return len(supported) / len(claim_tokens)
+
+
+def repair_missing_citations(
+    answer: str,
+    evidence_units: List[Dict],
+) -> str:
+    """
+    Conservatively attach citations omitted by the local chat model.
+
+    The small local model can occasionally follow the factual constraints
+    but omit ``[Source N]`` even when the prompt explicitly requests them.
+    We repair only near-extractive claims that map unambiguously to one
+    validated evidence unit.
+
+    Safety rules:
+    - Existing citations are never changed.
+    - Direct evidence text is preferred over parent context.
+    - A source is eligible only if the same conservative lexical-support
+      rule used by the validator passes.
+    - If no unique supported source can be identified, the claim is left
+      uncited. Final validation will then reject the answer and the engine
+      will use its deterministic fallback.
+    """
+    if not answer:
+        return answer
+
+    normalized = answer.strip()
+
+    if normalized == ABSTENTION_MESSAGE:
+        return normalized
+
+    repaired_lines = []
+
+    for raw_line in normalized.splitlines():
+        line = raw_line.strip()
+
+        if not line:
+            repaired_lines.append("")
+            continue
+
+        # Preserve already cited lines exactly.
+        if re.search(
+            r"\[Source\s+\d+\]",
+            line,
+            flags=re.IGNORECASE,
+        ):
+            repaired_lines.append(line)
+            continue
+
+        parts = re.split(
+            r"(?<=[.!?])\s+(?=[A-Z])",
+            line,
+        )
+
+        repaired_parts = []
+
+        for part in parts:
+            claim = part.strip()
+
+            if not claim:
+                continue
+
+            if re.search(
+                r"\[Source\s+\d+\]",
+                claim,
+                flags=re.IGNORECASE,
+            ):
+                repaired_parts.append(claim)
+                continue
+
+            semantic_claim = normalize_claim_for_nli(
+                claim
+            )
+
+            direct_matches = []
+
+            for index, unit in enumerate(
+                evidence_units,
+                start=1,
+            ):
+                source_number = unit.get(
+                    "_source_number",
+                    index,
+                )
+
+                if not provenance_supports_claim(
+                    semantic_claim,
+                    unit,
+                ):
+                    continue
+
+                evidence_text = unit.get(
+                    "text",
+                    "",
+                )
+
+                if not claim_has_strong_lexical_support(
+                    semantic_claim,
+                    evidence_text,
+                ):
+                    continue
+
+                direct_matches.append(
+                    (
+                        _lexical_support_coverage(
+                            semantic_claim,
+                            evidence_text,
+                        ),
+                        source_number,
+                    )
+                )
+
+            chosen_source = None
+
+            if direct_matches:
+                direct_matches.sort(
+                    reverse=True
+                )
+
+                best_score = direct_matches[0][0]
+
+                best_sources = [
+                    source_number
+                    for score, source_number
+                    in direct_matches
+                    if abs(score - best_score) < 1e-9
+                ]
+
+                if len(best_sources) == 1:
+                    chosen_source = best_sources[0]
+
+            # If the direct evidence itself is not enough, parent context
+            # may legitimately establish role/organization provenance.
+            if chosen_source is None:
+                contextual_matches = []
+
+                for index, unit in enumerate(
+                    evidence_units,
+                    start=1,
+                ):
+                    source_number = unit.get(
+                        "_source_number",
+                        index,
+                    )
+
+                    if not provenance_supports_claim(
+                        semantic_claim,
+                        unit,
+                    ):
+                        continue
+
+                    evidence_text = unit.get(
+                        "text",
+                        "",
+                    )
+
+                    parent_text = unit.get(
+                        "parent_text",
+                        "",
+                    )
+
+                    if parent_text:
+                        context = (
+                            f"{parent_text}\n"
+                            f"{evidence_text}"
+                        )
+                    else:
+                        context = evidence_text
+
+                    if not claim_has_strong_lexical_support(
+                        semantic_claim,
+                        context,
+                    ):
+                        continue
+
+                    contextual_matches.append(
+                        (
+                            _lexical_support_coverage(
+                                semantic_claim,
+                                context,
+                            ),
+                            source_number,
+                        )
+                    )
+
+                if contextual_matches:
+                    contextual_matches.sort(
+                        reverse=True
+                    )
+
+                    best_score = (
+                        contextual_matches[0][0]
+                    )
+
+                    best_sources = [
+                        source_number
+                        for score, source_number
+                        in contextual_matches
+                        if abs(
+                            score - best_score
+                        ) < 1e-9
+                    ]
+
+                    if len(best_sources) == 1:
+                        chosen_source = (
+                            best_sources[0]
+                        )
+
+            if chosen_source is None:
+                repaired_parts.append(
+                    claim
+                )
+            else:
+                repaired_parts.append(
+                    f"{claim} "
+                    f"[Source {chosen_source}]"
+                )
+
+        repaired_lines.append(
+            " ".join(repaired_parts)
+        )
+
+    return "\n".join(
+        repaired_lines
+    ).strip()
+
+
+def remove_standalone_citation_lines(
+    answer: str,
+) -> str:
+    """
+    Remove model artifacts that consist only of citation labels.
+
+    Example:
+        [Source 1]
+        [Source 2]
+
+    A citation must be attached to a factual claim; a citation-only line
+    contributes no answer content and can confuse later validation.
+    """
+    cleaned_lines = []
+
+    for raw_line in (answer or "").splitlines():
+        line = raw_line.strip()
+
+        if (
+            line
+            and re.fullmatch(
+                r"(?:\[Source\s+\d+\]\s*)+",
+                line,
+                flags=re.IGNORECASE,
+            )
+        ):
+            continue
+
+        cleaned_lines.append(raw_line.rstrip())
+
+    return "\n".join(cleaned_lines).strip()
+
+
+def deduplicate_generated_lines(
+    answer: str,
+) -> str:
+    """
+    Remove exact repeated non-empty answer lines while preserving order.
+
+    Small local models occasionally repeat a complete generated paragraph.
+    This post-processing is deliberately conservative: only exact normalized
+    duplicates are removed.
+    """
+    if not answer:
+        return answer
+
+    seen = set()
+    output = []
+
+    for raw_line in answer.splitlines():
+        line = raw_line.strip()
+
+        if not line:
+            if output and output[-1] != "":
+                output.append("")
+            continue
+
+        key = re.sub(
+            r"\s+",
+            " ",
+            line,
+        ).casefold()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        output.append(line)
+
+    while output and output[-1] == "":
+        output.pop()
+
+    return "\n".join(output).strip()
+
+
+def _meaningful_claim_count(
+    line: str,
+) -> int:
+    """
+    Estimate the number of factual sentence-like claims on one output line.
+
+    This is used only for citation completeness. It intentionally ignores
+    citation-only material and short heading-like labels.
+    """
+    without_citations = re.sub(
+        r"\[Source\s+\d+\]",
+        "",
+        line or "",
+        flags=re.IGNORECASE,
+    ).strip()
+
+    without_citations = re.sub(
+        r"^\s*(?:[-*•]|\d+[.)])\s*",
+        "",
+        without_citations,
+    ).strip()
+
+    if not without_citations:
+        return 0
+
+    # Allow short heading labels such as "Experience:".
+    if (
+        without_citations.endswith(":")
+        and len(
+            re.findall(
+                r"\b[\w+#.-]+\b",
+                without_citations,
+            )
+        ) <= 8
+    ):
+        return 0
+
+    parts = [
+        part.strip()
+        for part in re.split(
+            r"(?<=[.!?])\s+",
+            without_citations,
+        )
+        if part.strip()
+    ]
+
+    count = 0
+
+    for part in parts:
+        words = re.findall(
+            r"\b[\w+#.-]+\b",
+            part,
+        )
+
+        if len(words) >= 3:
+            count += 1
+
+    return count
+
+
+def all_factual_claims_have_citations(
+    answer: str,
+) -> bool:
+    """
+    Require citation coverage for every factual sentence-like claim.
+
+    The older validator verified only claims that already had citations.
+    Uncited factual sentences were therefore invisible to validation. This
+    closes that gap by comparing meaningful claim count with citation count
+    line by line.
+    """
+    if not answer:
+        return False
+
+    normalized = answer.strip()
+
+    if normalized == ABSTENTION_MESSAGE:
+        return True
+
+    for raw_line in normalized.splitlines():
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        meaningful_claims = _meaningful_claim_count(
+            line
+        )
+
+        if meaningful_claims == 0:
+            continue
+
+        citations = len(
+            re.findall(
+                r"\[Source\s+\d+\]",
+                line,
+                flags=re.IGNORECASE,
+            )
+        )
+
+        if citations < meaningful_claims:
+            return False
+
+    return True
+
+
 def validate_generated_answer(
     answer: str,
     evidence_units: List[Dict],
@@ -714,6 +1258,11 @@ def validate_generated_answer(
 
     if normalized == ABSTENTION_MESSAGE:
         return True
+
+    if not all_factual_claims_have_citations(
+        normalized
+    ):
+        return False
 
     citation_numbers = (
         extract_citation_numbers(
@@ -817,6 +1366,17 @@ def validate_generated_answer(
             )
         )
 
+        # Prefer an exact/near-extractive support check before NLI.
+        # Local NLI can be over-sensitive to harmless grammatical changes
+        # such as "develop" -> "developed" or "build" -> "built".
+        # This lexical path remains conservative and uses only the already
+        # validated source unit (plus its validated parent context).
+        if claim_has_strong_lexical_support(
+            semantic_claim,
+            evidence_for_judge,
+        ):
+            continue
+
         result = (
             claim_judge.judge_claim(
                 semantic_claim,
@@ -915,6 +1475,53 @@ abstention sentence.
 """.strip()
 
 
+# ---------------------------------------------------------------------------
+# Chat-template turn leakage.
+#
+# Some locally-loaded models (notably reasoning/chat models using a ChatML-
+# style template, identifiable by "<think>...</think>" blocks) don't stop
+# cleanly at the end of their own turn -- the small quantized model here
+# went on to hallucinate an entire fake continued conversation ("user\n{the
+# same question}\nassistant\n<think>...") and repeated THAT instead of a
+# single sentence. This happened even after adding frequency_penalty /
+# presence_penalty, which fixed the earlier verbatim-sentence loop but
+# doesn't stop a model from inventing structurally-different-but-still-
+# repetitive continuations.
+#
+# chat_client.settings has no `stop` sequence parameter in this SDK version
+# (confirmed via dir(chat_client.settings)), so we can't ask the runtime to
+# stop generation early. The next best thing: truncate the raw output
+# ourselves at the first sign the model has left its own answer and started
+# simulating a new turn, before any citation extraction/repair/validation
+# runs on it. This can only ever shorten a malformed response -- it never
+# touches a normal, well-behaved answer, since none of these markers appear
+# in a real one-turn factual answer.
+# ---------------------------------------------------------------------------
+
+_TURN_LEAKAGE_RE = re.compile(
+    r"""
+    \n\s*(?:user|assistant|system)\s*\n   # a bare role line on its own,
+                                          # e.g. "\nuser\n" or "\nassistant\n"
+    |
+    <\|im_(?:start|end)\|>               # ChatML special tokens, if the
+                                          # runtime ever leaks them literally
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def truncate_at_turn_leakage(content: str) -> str:
+    if not content:
+        return content
+
+    match = _TURN_LEAKAGE_RE.search(content)
+
+    if not match:
+        return content
+
+    return content[: match.start()].strip()
+
+
 def generate_grounded_answer(
     chat_client,
     query: str,
@@ -928,8 +1535,23 @@ def generate_grounded_answer(
         results,
     )
 
+    # frequency_penalty / presence_penalty: without these, this small
+    # local model (temperature=0.0, i.e. greedy decoding) can get stuck
+    # repeating the same sentence verbatim until max_tokens is exhausted --
+    # observed directly in production (the same factual sentence repeated
+    # ~13 times for a single-fact answer). frequency_penalty discourages
+    # reusing tokens in proportion to how often they've already appeared;
+    # presence_penalty discourages reusing ANY token that has appeared at
+    # all, which is the more direct lever against verbatim-loop repetition
+    # specifically. Values are conservative starting points (max range is
+    # -2.0 to 2.0) -- raise them further if repetition still appears, but
+    # avoid setting them so high that the answer degrades into rambling
+    # padding just to avoid repeating factual terms (source citations like
+    # "[Source 1]" and evidence terminology legitimately recur).
     chat_client.settings.temperature = 0.0
     chat_client.settings.max_tokens = 250
+    chat_client.settings.frequency_penalty = 0.5
+    chat_client.settings.presence_penalty = 0.3
 
     response = chat_client.complete_chat(
         [
@@ -954,7 +1576,7 @@ def generate_grounded_answer(
     if not content:
         return ABSTENTION_MESSAGE
 
-    return content.strip()
+    return truncate_at_turn_leakage(content.strip())
 
 def generate_validated_subanswer(
     chat_client,
@@ -994,8 +1616,12 @@ The Parent context may identify where the evidence belongs.
 Cite only this source.
 """
 
+    # See generate_grounded_answer() above for why frequency_penalty /
+    # presence_penalty are needed here.
     chat_client.settings.temperature = 0.0
     chat_client.settings.max_tokens = 180
+    chat_client.settings.frequency_penalty = 0.5
+    chat_client.settings.presence_penalty = 0.3
 
     response = chat_client.complete_chat(
         [
@@ -1020,7 +1646,32 @@ Cite only this source.
     if not content:
         return ABSTENTION_MESSAGE
 
-    content = content.strip()
+    content = truncate_at_turn_leakage(content.strip())
+
+    # A provenance question can have clearly validated parent context while the
+    # small local model still chooses to abstain. Treat that as a generation
+    # failure, not as a knowledge-base abstention, so RecallEngine can use the
+    # deterministic grounded composer. This is intentionally narrow and only
+    # applies to explicit provenance questions with validated parent context.
+    if (
+        content == ABSTENTION_MESSAGE
+        and query_requests_provenance(query)
+        and has_explicit_provenance_evidence(evidence_units)
+    ):
+        return ""
+
+    content = repair_missing_citations(
+        content,
+        evidence_units,
+    )
+
+    content = remove_standalone_citation_lines(
+        content
+    )
+
+    content = deduplicate_generated_lines(
+        content
+    )
 
     print(
         "\nSUBQUERY:"
@@ -1056,10 +1707,60 @@ Cite only this source.
     )
 
     if not validation_result:
-        return ABSTENTION_MESSAGE
+        # Validation failure means the model output is unusable; it does NOT mean
+        # the validated evidence is absent. Return an empty sentinel so the engine
+        # falls back to its deterministic evidence composer instead of reporting a
+        # false GENERATOR_ABSTAINED result.
+        return ""
 
     return content
 
+
+
+
+def query_requests_provenance(query: str) -> bool:
+    """Return True when the question explicitly asks where/under whom evidence belongs.
+
+    When validated evidence already contains parent/provenance context, a small local
+    model may still over-abstain on these questions. In that case the engine should
+    use its deterministic grounded composer rather than turning the whole result into
+    a false abstention.
+    """
+    normalized = " ".join((query or "").casefold().split())
+
+    provenance_markers = (
+        "where ",
+        "where was ",
+        "where did ",
+        "which company",
+        "which organization",
+        "which organisation",
+        "at which company",
+        "at which organization",
+        "under which role",
+        "which role",
+    )
+
+    return any(
+        marker in normalized
+        for marker in provenance_markers
+    )
+
+
+def has_explicit_provenance_evidence(
+    evidence_units: List[Dict],
+) -> bool:
+    """Return True when at least one validated unit carries useful parent context."""
+    for unit in evidence_units:
+        parent_text = (
+            unit.get("parent_text")
+            or ""
+        ).strip()
+
+        if parent_text:
+            return True
+
+    return False
 
 def generate_grounded_answer_from_evidence(
     chat_client,
@@ -1162,65 +1863,13 @@ def generate_grounded_answer_from_evidence(
 
         return combined_answer
 
-    # Single subquery with multiple evidence units:
-    # generate and validate one atomic answer per source.
-    if (
-        len(subqueries) == 1
-        and len(numbered_evidence) > 1
-    ):
-        atomic_answers = []
-
-        subquery = subqueries[0]
-
-        for unit in numbered_evidence:
-            atomic_answer = (
-                generate_validated_subanswer(
-                    chat_client,
-                    subquery,
-                    [unit],
-                    claim_judge=claim_judge,
-                )
-            )
-
-            if (
-                atomic_answer
-                != ABSTENTION_MESSAGE
-            ):
-                atomic_answers.append(
-                    atomic_answer
-                )
-
-        if not atomic_answers:
-            return ABSTENTION_MESSAGE
-
-        combined_answer = "\n".join(
-            atomic_answers
-        )
-
-        print(
-            "\nGenerated atomic candidate answer:"
-        )
-        print(
-            combined_answer
-        )
-
-        validation_result = (
-            validate_generated_answer(
-                combined_answer,
-                numbered_evidence,
-                claim_judge=claim_judge,
-            )
-        )
-
-        print(
-            f"\nCitation/claim validation: "
-            f"{'PASS' if validation_result else 'FAIL'}"
-        )
-
-        if not validation_result:
-            return ABSTENTION_MESSAGE
-
-        return combined_answer
+    # Single-subquery questions are generated in one model call,
+    # even when several validated evidence units support the answer.
+    #
+    # The prompt already requires atomic factual claims and per-claim
+    # citations. The final validator still checks every cited claim
+    # against its exact source, so we keep grounding guarantees while
+    # avoiding one expensive chat completion per evidence unit.
     evidence_units = numbered_evidence
 
     user_prompt = build_evidence_user_prompt(
@@ -1241,8 +1890,12 @@ def generate_grounded_answer_from_evidence(
         "=" * 70
     )
 
+    # See generate_grounded_answer() above for why frequency_penalty /
+    # presence_penalty are needed here.
     chat_client.settings.temperature = 0.0
     chat_client.settings.max_tokens = 250
+    chat_client.settings.frequency_penalty = 0.5
+    chat_client.settings.presence_penalty = 0.3
 
     response = chat_client.complete_chat(
         [
@@ -1267,7 +1920,20 @@ def generate_grounded_answer_from_evidence(
     if not content:
         return ABSTENTION_MESSAGE
 
-    content = content.strip()
+    content = truncate_at_turn_leakage(content.strip())
+
+    content = repair_missing_citations(
+        content,
+        evidence_units,
+    )
+
+    content = remove_standalone_citation_lines(
+        content
+    )
+
+    content = deduplicate_generated_lines(
+        content
+    )
 
     print(
         "\nGenerated candidate answer:"
@@ -1289,5 +1955,3 @@ def generate_grounded_answer_from_evidence(
         return ABSTENTION_MESSAGE
 
     return content
-
-

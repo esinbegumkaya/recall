@@ -1,436 +1,203 @@
+<div align="center">
+
 # Recall
+### Offline Local RAG Assistant powered by Microsoft Foundry Local
 
-**A privacy-first, local AI assistant for finding files across your computer using natural language.**
+A local-first Retrieval-Augmented Generation (RAG) assistant for indexing, searching, validating, and answering questions from documents on a user's computer.
 
-Recall indexes files on your computer and lets you search for them the way you would ask another person.
+**Python 3.11 · Microsoft Foundry Local · Streamlit · SQLite · Hybrid Retrieval · NLI**
 
-Instead of remembering exact filenames, folders, or keywords, you can ask:
+**Status:** Completed · **Unit tests:** 42/42 passing · **End-to-end evaluation:** 5/5 passing (100%)
 
-```text
-Find my most recent CV.
-Where is the document I wrote about RAG?
-Find the presentation about artificial intelligence.
-Which file mentions Microsoft and AI agents?
-Find the network assignment from last week.
-```
-
-Recall combines local query understanding, metadata search, full-text retrieval, fuzzy filename matching, semantic similarity, and evidence validation to identify the most relevant files while keeping the search pipeline local.
+</div>
 
 ---
 
-## Why Recall?
+## Overview
 
-Traditional desktop search works well when you already know what a file is called.
+Recall is a local document question-answering assistant built around Retrieval-Augmented Generation (RAG). Documents are parsed and indexed on the user's machine, embeddings are stored locally in SQLite, relevant chunks are retrieved with a hybrid search pipeline, evidence is validated before generation, and answers are generated with Microsoft Foundry Local.
 
-Real searches are often much less precise.
+The project began from the Microsoft Foundry Local summer-school RAG plan and extends the basic reference pipeline with hybrid retrieval, structural reranking, evidence validation, provenance tracking, citation validation, responsible abstention, incremental indexing, Firebase authentication, and a Streamlit interface.
 
-You may remember:
-
-* what the document was about,
-* roughly when you worked on it,
-* a company or person mentioned inside it,
-* the type of document,
-* part of its filename,
-* or simply the idea you were looking for.
-
-Recall turns those incomplete memories into structured search signals and searches across both **file metadata and file contents**.
-
-The goal is simple:
-
-> **You should not need to remember where a file is stored in order to find it.**
+> **Local-first note:** document parsing, indexing, retrieval, evidence processing, embeddings, and LLM inference are designed to run locally. Firebase Authentication is an optional online authentication layer. Initial model/dependency acquisition may also require network access before offline runtime.
 
 ---
 
 ## Key Features
 
-### Natural-Language File Search
-
-Search using conversational queries instead of exact filenames.
-
-Examples:
-
-```text
-Find my latest CV.
-Find the document where I wrote about RAG.
-Where are my Turkish notes?
-Find my AI presentation.
-```
-
-The query planner extracts signals such as:
-
-* semantic concepts
-* lexical keywords
-* filename clues
-* content clues
-* file-type hints
-* location hints
-* date preferences
-* requested actions
-
----
-
-### Multilingual & Typo-Tolerant Queries
-
-Recall is designed to handle flexible queries rather than requiring a rigid command syntax.
-
-Queries can contain:
-
-* English
-* Turkish
-* incomplete descriptions
-* approximate filenames
-* spelling mistakes
-* mixed semantic and metadata constraints
-
-For example:
-
-```text
-en güncel cvmi getir
-cvmn en gncelni getir
-rag hakkında yazdığım belge
-Where is my most recent presentation about AI?
-```
-
----
-
-### Hybrid Retrieval
-
-Recall does not depend on a single retrieval method.
-
-It combines multiple signals:
-
-```text
-Natural-language query
-        │
-        ▼
-Query Understanding
-        │
-        ▼
-Search Signal Extraction
-        │
-        ├── Filename / path matching
-        ├── Full-text search
-        ├── Metadata / date relevance
-        ├── Fuzzy matching
-        └── Semantic similarity
-        │
-        ▼
-Hybrid Ranking
-        │
-        ▼
-Semantic Reranking
-        │
-        ▼
-Evidence Validation
-        │
-        ▼
-Relevant Files
-```
-
-This allows Recall to handle both precise searches such as:
-
-```text
-Harvard CV
-```
-
-and semantic searches such as:
-
-```text
-the document where I described building AI agents
-```
-
----
-
-## Privacy-First Architecture
-
-Recall is designed around **local file discovery**.
-
-The system indexes local files into a local SQLite database and performs retrieval using local components.
-
-The current architecture uses:
-
-* local file crawling
-* local parsing and chunking
-* SQLite metadata storage
-* SQLite FTS5 full-text search
-* local embeddings
-* local semantic reranking
-* local NLI-based evidence validation
-* local query planning
-
-This architecture avoids requiring users to upload their personal documents to a remote search service.
+- **Local LLM inference** with Microsoft Foundry Local
+- **Local embeddings** and persistent SQLite storage
+- **PDF, DOCX, TXT, Markdown, and Python** document ingestion
+- Recursive folder discovery and incremental indexing
+- Dense semantic retrieval
+- SQLite **FTS5** keyword retrieval
+- Hybrid retrieval with **Reciprocal Rank Fusion (RRF)**
+- Structural and section-aware reranking
+- Parent-child context recovery and provenance tracking
+- Topic-aware evidence filtering
+- Natural Language Inference (**NLI**) evidence validation
+- Citation-aware grounded generation
+- Deterministic grounded fallback when generated output cannot be safely validated but direct evidence is available
+- Responsible abstention when the available files do not support an answer
+- Streamlit UI with source visualization and theme support
+- Optional Firebase Authentication
+- Automated regression and end-to-end evaluation
 
 ---
 
 ## Architecture
 
 ```text
-                         ┌─────────────────────┐
-                         │     User Query      │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │    Query Planner    │
-                         │   Local Qwen Model  │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                  ┌─────────────────────────────────┐
-                  │      Search Signal Extraction   │
-                  │                                 │
-                  │ concepts · keywords · filename  │
-                  │ content · type · location · date│
-                  └────────────────┬────────────────┘
-                                   │
-                                   ▼
-                  ┌─────────────────────────────────┐
-                  │        Hybrid Retriever         │
-                  │                                 │
-                  │ SQLite FTS5                     │
-                  │ Filename / Path Fuzzy Matching  │
-                  │ Metadata & Recency              │
-                  └────────────────┬────────────────┘
-                                   │
-                                   ▼
-                         ┌─────────────────────┐
-                         │ Semantic Reranker   │
-                         │ Local Embeddings    │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │  Evidence Pipeline  │
-                         │ Structural + Topic  │
-                         │ Gates + Local NLI   │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │   Grounded Result   │
-                         │ File · Path · Page  │
-                         │ Section · Evidence  │
-                         └─────────────────────┘
+                         +----------------------+
+                         |     Streamlit UI     |
+                         +----------+-----------+
+                                    |
+                                    v
+                         +----------------------+
+                         |    Recall Engine     |
+                         +----------+-----------+
+                                    |
+              +---------------------+---------------------+
+              |                     |                     |
+              v                     v                     v
+     +----------------+    +----------------+    +------------------+
+     | Hybrid Search  |    | Evidence Gate  |    | Foundry Local    |
+     | Dense + FTS5   |    | Topic + NLI    |    | Local LLM        |
+     +----------------+    +----------------+    +------------------+
+              |                     |                     |
+              +---------------------+---------------------+
+                                    |
+                                    v
+                         +----------------------+
+                         |   SQLite Database    |
+                         +----------+-----------+
+                                    ^
+                                    |
+                         +----------------------+
+                         |  Document Indexer    |
+                         +----------+-----------+
+                                    ^
+                                    |
+                         PDF / DOCX / TXT / MD / PY
 ```
 
----
-
-## Retrieval Pipeline
-
-### 1. Local File Crawling
-
-Recall scans configured directories and discovers supported documents while ignoring development and system directories such as virtual environments, Git metadata, caches, and other irrelevant locations.
-
-The crawler collects metadata including:
-
-* file path
-* filename
-* extension
-* file size
-* creation time
-* modification time
+The central `RecallEngine` coordinates retrieval, evidence validation, local generation, citation validation, abstention, and final response construction.
 
 ---
 
-### 2. Parsing & Chunking
-
-Supported files are parsed into searchable text chunks.
-
-Where available, Recall preserves provenance information such as:
-
-* source file
-* page number
-* section name
-* chunk index
-
-This information is later used to explain why a result was retrieved.
-
----
-
-### 3. Full-Text Index
-
-Parsed chunks are stored in SQLite and indexed using **FTS5**.
-
-This provides fast lexical retrieval without requiring every file to be embedded during the initial indexing process.
-
----
-
-### 4. Query Planning
-
-A local language model converts the user's request into structured search signals.
-
-A query can produce signals for:
+## Query Workflow
 
 ```text
-concepts
-keywords
-filename_terms
-content_terms
-extensions
-location_terms
-date preferences
-retrieval weights
-```
-
-Deterministic heuristics are available as a fallback if model-based planning is unavailable.
-
----
-
-### 5. Hybrid Candidate Retrieval
-
-Recall combines:
-
-* FTS lexical relevance
-* filename similarity
-* path similarity
-* fuzzy matching
-* file metadata
-* modification/creation dates
-* query-specific retrieval weights
-
-Different queries therefore produce different ranking strategies.
-
-A filename-oriented query can prioritize filenames, while a conceptual query can give semantic evidence more influence.
-
----
-
-### 6. Lazy Semantic Reranking
-
-Recall deliberately avoids embedding the entire computer during initial indexing.
-
-Instead:
-
-1. lexical and metadata retrieval creates a candidate set,
-2. relevant candidate chunks are selected,
-3. embeddings are generated only when required,
-4. embeddings are cached locally,
-5. semantic similarity reranks the candidates.
-
-This keeps initial indexing substantially lighter while still providing semantic retrieval.
-
----
-
-### 7. Evidence Validation
-
-For evidence-sensitive queries, Recall applies multiple validation layers.
-
-The evidence pipeline includes:
-
-```text
-Structural Gate
-      ↓
-Topical Gate
-      ↓
-Provenance Constraints
-      ↓
+User Question
+     |
+     v
+Hybrid Retrieval
+     |
+     v
+Candidate Chunks
+     |
+     v
+Structural / Topic Filtering
+     |
+     v
+Evidence Splitting + Parent Context Recovery
+     |
+     v
 NLI Validation
-      ↓
-Grounded Evidence
+     |
+     v
+Validated Evidence
+     |
+     v
+Foundry Local Generation
+     |
+     v
+Citation / Claim Validation
+     |
+     +---- valid generated answer ------> Final Answer
+     |
+     +---- direct evidence available ---> Grounded Deterministic Fallback
+     |
+     +---- insufficient support --------> Responsible Abstention
 ```
 
-This reduces false-positive evidence caused by semantically similar but unrelated text.
-
-For example, a query asking whether AI-agent work occurred at a specific organization should not accept AI-agent evidence originating from a different organization.
+Recall does not blindly send retrieved chunks to the LLM. Candidate evidence is filtered and validated first. Generated factual claims are then checked before the answer is returned.
 
 ---
 
-## Grounded Results
+## Supported Files
 
-Recall is designed to return more than a filename.
+| Format | Extension | Supported |
+|---|---|:---:|
+| PDF | `.pdf` | ✅ |
+| Microsoft Word | `.docx` | ✅ |
+| Plain text | `.txt` | ✅ |
+| Markdown | `.md` | ✅ |
+| Python source | `.py` | ✅ |
 
-Results can include:
-
-* filename
-* full local path
-* relevance score
-* modification date
-* page number
-* section
-* supporting text
-* evidence diagnostics
-
-The interface can also open the selected file or its containing folder directly.
-
----
-
-## User Interface
-
-Recall includes a Streamlit interface focused on file discovery.
-
-The main workflow is intentionally simple:
-
-```text
-Ask a question
-      ↓
-Search my computer
-      ↓
-Understand query
-      ↓
-Search indexed files
-      ↓
-Semantic reranking
-      ↓
-Display ranked files
-```
-
-Search progress is tied to actual retrieval stages rather than a simulated loading animation.
-
----
-
-## Tech Stack
-
-| Component           | Technology      |
-| ------------------- | --------------- |
-| Language            | Python 3.11     |
-| UI                  | Streamlit       |
-| Database            | SQLite          |
-| Lexical Search      | SQLite FTS5     |
-| Fuzzy Matching      | RapidFuzz       |
-| Local AI Runtime    | Foundry Local   |
-| Query Planner       | Qwen 3.5        |
-| Embeddings          | Qwen3 Embedding |
-| Evidence Validation | DeBERTa NLI     |
-| Testing             | pytest          |
+Scanned/image-only PDFs are not currently OCR-processed.
 
 ---
 
 ## Project Structure
 
+The exact repository can evolve, but the main components are organized as follows:
+
 ```text
 Recall/
-│
 ├── src/
 │   └── recall/
-│       ├── crawler.py
-│       ├── parser.py
-│       ├── chunker.py
-│       ├── database.py
-│       ├── query_planner.py
+│       ├── engine.py
+│       ├── generator.py
+│       ├── retriever.py
 │       ├── hybrid_retriever.py
+│       ├── retrieval.py
 │       ├── semantic_reranker.py
 │       ├── evidence.py
 │       ├── evidence_gate.py
+│       ├── evidence_judge.py
 │       ├── nli_judge.py
-│       └── engine.py
-│
+│       ├── query_planner.py
+│       ├── intent.py
+│       ├── parser.py
+│       ├── chunker.py
+│       ├── database.py
+│       └── crawler.py
 ├── ui/
-│   └── app.py
-│
+│   ├── app.py
+│   └── firebase_auth.py
 ├── scripts/
 │   ├── index_folder.py
-│   └── evaluate_*.py
-│
+│   ├── evaluate_retrieval.py
+│   ├── evaluate_end_to_end.py
+│   ├── final_check.py
+│   └── ...
 ├── tests/
 │   └── test_evidence_pipeline.py
-│
 ├── data/
 │   ├── evaluation/
+│   ├── index/
 │   └── samples/
-│
+├── .streamlit/
+│   └── secrets.toml.example
 ├── requirements.txt
 ├── pytest.ini
+├── FINAL_VALIDATION.md
 └── README.md
 ```
+
+---
+
+## Requirements
+
+Recommended environment:
+
+- Windows 11
+- Python 3.11
+- Microsoft Foundry Local
+- Sufficient local storage/RAM for the selected local models
+
+The validated development environment used Python 3.11 and Microsoft Foundry Local. The project requirements include the Foundry Local SDK, Streamlit, PyTorch/Transformers-related components, PDF/DOCX parsing libraries, and Pytest.
 
 ---
 
@@ -438,163 +205,453 @@ Recall/
 
 ### 1. Clone the repository
 
-```bash
-git clone <repository-url>
-cd memorag
+```powershell
+git clone <YOUR_REPOSITORY_URL>
+cd Recall
 ```
 
 ### 2. Create a virtual environment
 
-Windows:
-
 ```powershell
 python -m venv .venv
+```
+
+### 3. Activate it
+
+```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
-### 3. Install dependencies
+If PowerShell blocks activation, adjust the execution policy according to your local security requirements.
 
-```bash
+### 4. Install dependencies
+
+```powershell
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+### 5. Install / configure Microsoft Foundry Local
+
+Install Microsoft Foundry Local and ensure its runtime/SDK is available before starting generation-enabled Recall.
+
+The application loads the local model lazily, so the model is initialized when generation is first required rather than at application import time.
+
 ---
 
-## Running Recall
+## Firebase Authentication
 
-Make the source package available:
+Firebase provides the optional login layer for the Streamlit application.
 
-```powershell
-$env:PYTHONPATH = "$PWD\src"
+Create:
+
+```text
+.streamlit/secrets.toml
 ```
 
-Start the interface:
+Use the repository's example file as the template:
 
-```powershell
-streamlit run .\ui\app.py
+```text
+.streamlit/secrets.toml.example
 ```
 
-Then open the local Streamlit address shown in the terminal.
+Example structure:
+
+```toml
+[firebase]
+apiKey = "..."
+authDomain = "..."
+projectId = "..."
+storageBucket = "..."
+messagingSenderId = "..."
+appId = "..."
+```
+
+### Security
+
+Do **not** commit your real `.streamlit/secrets.toml` file.
+
+Keep it in `.gitignore` and commit only the example configuration.
+
+Firebase Authentication requires network connectivity. It is separate from Recall's local RAG inference pipeline.
+
+---
+
+## Running the Application
+
+From the repository root:
+
+```powershell
+streamlit run ui/app.py
+```
+
+The UI provides document indexing/search controls, grounded answers, source information, and application navigation.
+
+---
+
+## Indexing Documents
+
+### Index default computer locations
+
+```powershell
+python .\scripts\index_folder.py --computer
+```
+
+Recall discovers supported documents and compares them with the existing local index.
+
+The incremental indexing pipeline distinguishes between:
+
+- new files,
+- modified files,
+- unchanged files.
+
+Unchanged files can be skipped rather than unnecessarily parsed and embedded again.
+
+### Index a custom folder
+
+```powershell
+python .\scripts\index_folder.py --folder "C:\path\to\documents"
+```
+
+The local index is persisted in SQLite.
+
+---
+
+## Retrieval Pipeline
+
+Recall uses a hybrid retrieval architecture rather than relying on a single search strategy.
+
+### Dense retrieval
+
+Local embeddings provide semantic similarity search and improve retrieval for paraphrased or conceptually related queries.
+
+### SQLite FTS5
+
+FTS5 complements semantic retrieval with lexical matching. It is especially useful for exact names, identifiers, filenames, technical terminology, and programming-related tokens.
+
+### Reciprocal Rank Fusion
+
+Dense and lexical rankings are combined using Reciprocal Rank Fusion.
+
+### Structural reranking
+
+Additional ranking signals can use document structure, including:
+
+- section information,
+- headings,
+- parent context,
+- query intent.
+
+This is particularly useful for structured documents such as CVs and reports.
+
+---
+
+## Evidence Validation
+
+Retrieval is treated as candidate discovery, not final proof.
+
+Before generation, Recall processes evidence through multiple stages:
+
+1. Structural evidence splitting
+2. Topic filtering
+3. Evidence normalization
+4. Parent-context association
+5. Provenance preservation
+6. NLI-based validation
+
+This reduces the chance that a semantically similar but unsupported chunk is treated as evidence for the user's question.
+
+---
+
+## Grounded Generation
+
+Validated evidence is formatted into a constrained prompt for Microsoft Foundry Local.
+
+The generation instructions require the model to:
+
+- use only validated evidence,
+- write grounded factual claims,
+- cite supporting sources,
+- preserve evidence terminology where appropriate,
+- abstain when the evidence does not support an answer.
+
+The generation layer is therefore downstream of retrieval and evidence validation rather than acting as an unrestricted chatbot.
+
+---
+
+## Citation Validation and Safe Fallback
+
+Generated output is checked before it is accepted.
+
+If a generated answer contains unsupported or inadequately cited factual claims, Recall does not blindly return it. When the engine has sufficiently direct validated evidence, it can construct a deterministic, source-grounded fallback response from that evidence.
+
+If the available files do not actually support the requested information, Recall returns the abstention message instead of fabricating an answer:
+
+```text
+The available files do not provide enough evidence to answer this question.
+```
+
+This distinction is important: **generation failure is not automatically the same as evidence failure**.
 
 ---
 
 ## Testing
 
-Run the regression suite with:
+### Full delivery smoke-check
 
-```bash
-pytest -q
+Run:
+
+```powershell
+python .\scripts\final_check.py
 ```
 
-Current regression status:
+Latest validated result:
 
 ```text
-42 passed
+42 passed, 1 warning
+
+[OK] Final delivery smoke-check passed.
 ```
 
-The suite covers key parts of the evidence and retrieval pipeline, including structural filtering, topical validation, provenance handling, citation validation, and NLI-based evidence admission.
+**Unit/regression status: 42/42 passing.**
+
+The remaining PyTorch deprecation warning does not cause a test failure.
 
 ---
 
-## Example Queries
+## End-to-End Evaluation
 
-```text
-en güncel cvmi getir
+Run:
+
+```powershell
+python .\scripts\evaluate_end_to_end.py
 ```
 
-```text
-rag hakkında yazdığım belge
-```
+The current benchmark contains five cases covering:
+
+- answerable AI-experience retrieval,
+- unsupported-query abstention,
+- provenance preservation,
+- AI-agent topic precision,
+- medical-image project retrieval.
+
+### Final result
+
+| Case | Purpose | Result |
+|---|---|:---:|
+| E2E-01 | Supported AI-experience question | PASS |
+| E2E-02 | Unsupported favorite-restaurant question | PASS |
+| E2E-03 | IBM Planning Analytics / Cubewise provenance | PASS |
+| E2E-04 | AI-agent-specific evidence | PASS |
+| E2E-05 | Medical-image classification project | PASS |
+| **Total** | **5 queries** | **5/5 — 100%** |
+
+Latest validated run:
 
 ```text
-geçen hafta hocadan gelen network ödevi
+Queries   : 5
+Passed    : 5
+Failed    : 0
+Pass Rate : 100.0%
+
+[OK] End-to-end evaluation passed.
 ```
 
-```text
-Microsoft geçen son cvyi bul
-```
+The end-to-end test exercises the complete path:
 
 ```text
-Where is my most recent presentation about AI?
-```
-
-```text
-Find the document where I worked with AI agents and RAG systems professionally.
+retrieval
+→ evidence gates
+→ NLI
+→ Foundry Local generation
+→ citation validation
+→ final response / safe fallback
 ```
 
 ---
 
-## Design Principles
+## Retrieval Evaluation
 
-### Local First
+The production hybrid retrieval benchmark uses Hit@K and Mean Reciprocal Rank (MRR).
 
-Personal documents should remain under the user's control.
+### Production Hybrid Retrieval
 
-### Retrieval Before Generation
+| Metric | Development | Held-out |
+|---|---:|---:|
+| Hit@1 | 0.50 | 0.40 |
+| Hit@3 | 0.60 | 0.60 |
+| Hit@5 | 0.60 | 0.60 |
+| MRR | 0.55 | 0.467 |
 
-Finding the correct evidence is more important than generating a fluent but unsupported answer.
+These metrics describe retrieval ranking performance and should be interpreted separately from the final 5/5 end-to-end functional benchmark.
 
-### Evidence Over Guessing
+### Structural Retrieval Experiment
 
-When valid evidence cannot be found, Recall should abstain rather than fabricate a result.
+A separate structural-ranking experiment achieved:
 
-### Hybrid Search Over Single-Method Search
+| Metric | Held-out Result |
+|---|---:|
+| Hit@1 | 0.90 |
+| Hit@3 | 1.00 |
+| Hit@5 | 1.00 |
+| MRR | 0.95 |
 
-Filename matching, lexical retrieval, metadata, and semantics solve different parts of the file-discovery problem.
-
-### Explainable Results
-
-A useful search system should be able to show where a result came from and why it was considered relevant.
-
----
-
-## Current Status
-
-Recall is under active development.
-
-The current version includes:
-
-* computer-wide local file indexing
-* incremental metadata-aware indexing
-* SQLite FTS5 search
-* multilingual natural-language query planning
-* typo-tolerant filename matching
-* hybrid retrieval
-* lazy semantic reranking
-* evidence extraction
-* structural and topical evidence gates
-* local NLI validation
-* provenance-aware grounding
-* Streamlit file-discovery interface
-* local file and folder opening
-* regression testing
-
-Planned improvements include further indexing optimization, broader parser coverage, retrieval evaluation, UI refinement, and packaging the application for easier installation.
+These experimental results demonstrate the value of document structure and section-aware signals, but they are not presented as the production hybrid benchmark.
 
 ---
 
-## Motivation
+## Performance
 
-Modern computers can contain thousands of documents spread across Downloads, Desktop, Documents, cloud-synced folders, university materials, work files, and personal archives.
+Performance depends heavily on:
 
-The information is there.
+- CPU/NPU/GPU availability,
+- RAM,
+- storage speed,
+- local model selection,
+- model cache state,
+- query/evidence complexity,
+- number and size of indexed documents.
 
-The difficult part is remembering **where**.
+The final five-case end-to-end validation run completed in approximately **270.51 seconds total** on the tested environment, with individual cases taking roughly **43–72 seconds**.
 
-Recall explores a different interaction model:
+This end-to-end timing includes multiple pipeline stages and local model work. It should not be confused with retrieval-only latency.
 
-> Instead of navigating folders, describe what you remember.
-
----
-
-## Author
-
-**Esin Begüm Kaya**
-
-Computer Engineering · AI · Data · Software Engineering
+Performance optimization remains an area for future work.
 
 ---
 
-## Disclaimer
+## Privacy and Offline Behavior
 
-Recall is an independent local file-search and retrieval project. It is not affiliated with other projects or products that use the names “Recall” or “MemoRAG”.
+Recall follows a local-first architecture:
+
+- documents are parsed locally,
+- embeddings are generated locally,
+- the SQLite knowledge base is local,
+- retrieval runs locally,
+- evidence validation runs locally,
+- Foundry Local performs local LLM inference.
+
+No cloud-hosted LLM is required for the RAG pipeline.
+
+However, two practical distinctions are important:
+
+1. **Firebase Authentication is optional and online.**
+2. Model/dependency setup or first-time acquisition may require Internet access before models are available locally.
+
+Once the required local components are installed/cached and optional online authentication is not required, the core RAG workflow is designed for local operation.
+
+---
+
+## Known Limitations
+
+- Initial indexing of large document collections can take significant time.
+- End-to-end generation latency depends strongly on local hardware and model choice.
+- Retrieval quality still depends on document structure and chunking.
+- Broad queries can retrieve semantically related but non-essential evidence.
+- Local LLM output can occasionally fail strict citation validation; Recall therefore includes grounded fallback behavior.
+- NLI scores are useful validation signals but are not infallible.
+- OCR is not implemented for scanned/image-only PDFs.
+- Image understanding and image retrieval are not currently implemented.
+- Parent-context quality depends on the structure of the source document.
+- Firebase login introduces an optional network dependency.
+
+---
+
+## Screenshots
+
+Add final project screenshots under a repository directory such as:
+
+```text
+docs/screenshots/
+```
+
+Recommended captures:
+
+1. Login screen
+2. Main dashboard
+3. Document indexing
+4. Search / question interface
+5. Generated answer with citations
+6. Source viewer
+7. Evaluation result showing `5/5` and `100%`
+
+Example Markdown once the images are added:
+
+```markdown
+![Recall Dashboard](docs/screenshots/dashboard.png)
+![Grounded Answer](docs/screenshots/grounded-answer.png)
+![End-to-End Evaluation](docs/screenshots/e2e-100.png)
+```
+
+---
+
+## Final Validation Status
+
+| Component | Status |
+|---|:---:|
+| Document ingestion | ✅ PASS |
+| Chunking and metadata | ✅ PASS |
+| Local embeddings | ✅ PASS |
+| SQLite persistence | ✅ PASS |
+| Dense retrieval | ✅ PASS |
+| FTS5 retrieval | ✅ PASS |
+| Hybrid retrieval | ✅ PASS |
+| Structural reranking | ✅ PASS |
+| Evidence filtering | ✅ PASS |
+| Parent/provenance handling | ✅ PASS |
+| NLI validation | ✅ PASS |
+| Foundry Local integration | ✅ PASS |
+| Citation validation | ✅ PASS |
+| Responsible abstention | ✅ PASS |
+| Deterministic grounded fallback | ✅ PASS |
+| Streamlit UI | ✅ PASS |
+| Firebase login | ✅ PASS |
+| Unit/regression tests | ✅ 42/42 |
+| End-to-end evaluation | ✅ 5/5 (100%) |
+
+---
+
+## Future Work
+
+Potential improvements include:
+
+- faster local generation,
+- retrieval and model caching optimizations,
+- adaptive chunk sizing,
+- cross-encoder reranking,
+- learning-to-rank,
+- OCR,
+- table extraction,
+- image understanding,
+- richer citation visualization,
+- conversation memory,
+- multi-user document libraries,
+- retrieval analytics,
+- improved parent-context extraction,
+- broader end-to-end benchmark suites.
+
+---
+
+## Acknowledgements
+
+Recall was developed around the Microsoft Foundry Local learning project and the local RAG architecture described in the summer-school project plan, then extended with additional retrieval, evidence-validation, provenance, citation, testing, authentication, and UI functionality.
+
+Technologies used include Microsoft Foundry Local, Python, Streamlit, SQLite, PyTorch/Transformers components, and Firebase Authentication.
+
+---
+
+## License
+
+If this repository is distributed under the MIT License, include a top-level `LICENSE` file containing the MIT License text.
+
+Do not advertise an MIT license badge until that file is actually present in the repository.
+
+---
+
+<div align="center">
+
+### Recall
+
+**Local documents. Local retrieval. Local inference. Grounded answers.**
+
+</div>
