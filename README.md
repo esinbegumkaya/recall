@@ -27,8 +27,6 @@
 
 <div align="center">
 
-### Offline Local RAG Assistant powered by Microsoft Foundry Local
-
 A local-first Retrieval-Augmented Generation (RAG) assistant for indexing, searching, validating, and answering questions from documents on a user's computer.
 
 **Python 3.11 · Microsoft Foundry Local · Streamlit · SQLite · Hybrid Retrieval · NLI**
